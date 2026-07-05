@@ -1,9 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import {
-  normalizeUazapiWebhook,
-  uazapiTypeToContentKind,
-} from '@/lib/whatsapp/uazapi-normalize'
+import { normalizeUazapiWebhook } from '@/lib/whatsapp/uazapi-normalize'
+import { uazapiDownloadMessage } from '@/lib/whatsapp/uazapi-api'
 import {
   processNormalizedInbound,
   findOrCreateContact,
@@ -117,11 +115,34 @@ type ConfigRow = any
 
 async function processEvent(event: NormalizedEvent, config: ConfigRow) {
   try {
-    const { contentType, placeholder } = uazapiTypeToContentKind(event.providerType)
-    const contentText = event.text ?? placeholder
+    // Media arrives as an encrypted WhatsApp CDN URL — worthless. Ask
+    // the uazapi server for the decrypted, hosted file (confirmed:
+    // POST /message/download → { fileURL }). Best-effort: on failure
+    // the message still lands, with a readable placeholder.
+    // TODO(fase-01 §1.7.3): re-upload to Supabase Storage long-term.
+    let mediaUrl: string | null = null
+    let contentText = event.text
+    if (event.hasMedia && event.waMessageId) {
+      try {
+        const dl = await uazapiDownloadMessage(
+          {
+            baseUrl: config.uazapi_base_url,
+            token: decrypt(config.uazapi_instance_token),
+          },
+          { messageId: event.waMessageId },
+        )
+        mediaUrl = dl.fileUrl
+      } catch (err) {
+        console.warn(
+          '[uazapi webhook] media download failed:',
+          err instanceof Error ? err.message : err,
+        )
+        contentText = contentText ?? `[${event.contentType} não baixado]`
+      }
+    }
 
     if (event.kind === 'from_me') {
-      await mirrorFromMe(event, config, contentType, contentText)
+      await mirrorFromMe(event, config, mediaUrl, contentText)
       return
     }
 
@@ -132,11 +153,9 @@ async function processEvent(event: NormalizedEvent, config: ConfigRow) {
       pushName: event.pushName,
       waMessageId: event.waMessageId,
       timestamp: event.timestamp,
-      contentType,
+      contentType: event.contentType,
       contentText,
-      // TODO(fase-01 §1.7.3): download and re-upload to Supabase
-      // Storage instead of trusting the uazapi server URL long-term.
-      mediaUrl: event.mediaUrl,
+      mediaUrl,
       interactiveReplyId: null, // uazapi replies arrive as plain text
       replyToWaMessageId: null,
     })
@@ -161,9 +180,10 @@ async function processEvent(event: NormalizedEvent, config: ConfigRow) {
 async function mirrorFromMe(
   event: NormalizedEvent,
   config: ConfigRow,
-  contentType: string,
+  mediaUrl: string | null,
   contentText: string | null,
 ) {
+  const contentType = event.contentType
   const db = supabaseAdmin()
   const phone = normalizePhone(event.fromPhone)
 
@@ -199,7 +219,7 @@ async function mirrorFromMe(
     sender_type: 'agent', // human on the handset; no sender_id to attribute
     content_type: contentType,
     content_text: contentText,
-    media_url: event.mediaUrl,
+    media_url: mediaUrl,
     message_id: event.waMessageId || null,
     status: 'sent',
     created_at: event.timestamp.toISOString(),

@@ -236,6 +236,38 @@ export async function uazapiInstanceStatus(
 }
 
 /**
+ * Fetch a decrypted, hosted URL for a received media message.
+ *
+ * WhatsApp media arrives as an encrypted CDN URL (.enc) that is
+ * useless without the mediaKey. The uazapi server decrypts and hosts
+ * the file itself:
+ *
+ *   POST /message/download { id: <messageid> }
+ *   → { fileURL: "https://<server>/files/<hash>.mp3", mimetype: "audio/mpeg" }
+ *
+ * (Confirmed live, 2026-07-05.) The URL lives on the uazapi server —
+ * good enough for the inbox now; the long-term plan re-uploads to
+ * Supabase Storage (plano fase-01 §1.7.3).
+ */
+export async function uazapiDownloadMessage(
+  ctx: UazapiContext,
+  args: { messageId: string },
+): Promise<{ fileUrl: string; mimetype: string }> {
+  if (!args.messageId) throw new Error('uazapiDownloadMessage requires messageId.')
+  const data = await uazapiPost(ctx, '/message/download', { id: args.messageId })
+  const fileUrl =
+    (typeof data.fileURL === 'string' && data.fileURL) ||
+    (typeof data.fileUrl === 'string' && data.fileUrl) ||
+    (typeof data.url === 'string' && data.url) ||
+    ''
+  if (!fileUrl) throw new Error('uazapi /message/download returned no file URL.')
+  return {
+    fileUrl,
+    mimetype: typeof data.mimetype === 'string' ? data.mimetype : '',
+  }
+}
+
+/**
  * Configure (or replace) the instance's webhook.
  *
  * Confirmed against a live uazapiGO v2 server (cloudefender, 2026-07):

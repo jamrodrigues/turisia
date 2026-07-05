@@ -102,6 +102,13 @@ GET /webhook             → mesmo array (null quando nenhum configurado)
 O CRM **configura isso automaticamente** ao salvar a config uazapi (`/api/uazapi/config` POST →
 `uazapiSetWebhook`). O segredo vai na query string da URL e é validado (decriptado) na rota inbound.
 
+⚠️ **Semântica confirmada em teste real (2026-07-05): `POST /webhook` SUBSTITUI o webhook existente**
+(mesmo id, URL sobrescrita — não adiciona um segundo). Consequências:
+- **NUNCA** apontar o CRM para uma instância de produção que ainda alimenta um n8n direto — derruba o fluxo
+  antigo na hora.
+- Na migração de um cliente (Fase 05), a troca de webhook É o cutover: atômica, instantânea, reversível
+  (re-POSTar a URL antiga volta tudo). Planejar horário e ter a URL antiga anotada para rollback.
+
 Também confirmados ao vivo:
 - `POST /instance/init {name}` (header `admintoken`) → `{ instance: { token, id, status, ... } }`
 - `GET /instance/status` (header `token`) → `{ instance: { status: 'disconnected'|'connected', qrcode, paircode, ... } }`
