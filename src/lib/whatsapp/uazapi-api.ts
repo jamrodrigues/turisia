@@ -236,6 +236,28 @@ export async function uazapiInstanceStatus(
 }
 
 /**
+ * Configure (or replace) the instance's webhook.
+ *
+ * Confirmed against a live uazapiGO v2 server (cloudefender, 2026-07):
+ *   POST /webhook { url, events: ['messages'], enabled: true }
+ *   → [ { id, url, enabled, events, excludeMessages, ... } ]
+ *   GET  /webhook → same array (null when none configured).
+ *
+ * Called automatically when the operator saves the uazapi config, so
+ * no manual panel step is needed.
+ */
+export async function uazapiSetWebhook(
+  ctx: UazapiContext,
+  args: { url: string; events?: string[] },
+): Promise<void> {
+  await uazapiPost(ctx, '/webhook', {
+    url: args.url,
+    events: args.events ?? ['messages'],
+    enabled: true,
+  })
+}
+
+/**
  * Create a new instance on the server. Provisioning-only (Fase 04) —
  * requires the server admin token, NOT an instance token.
  * Returns the new instance's token.

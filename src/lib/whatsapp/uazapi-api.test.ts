@@ -205,6 +205,25 @@ describe("extractMessageId — response envelope variants", () => {
   });
 });
 
+describe("uazapiSetWebhook", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("POSTs { url, events, enabled } to /webhook with the instance token", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => okJson([{ id: "wh1", url: "https://crm/api/uazapi/webhook?secret=s" }])),
+    );
+    const { uazapiSetWebhook } = await import("./uazapi-api");
+    await uazapiSetWebhook(CTX, { url: "https://crm/api/uazapi/webhook?secret=s" });
+    expect(lastCall().url).toBe("https://server.uazapi.test/webhook");
+    expect(lastBody()).toEqual({
+      url: "https://crm/api/uazapi/webhook?secret=s",
+      events: ["messages"],
+      enabled: true,
+    });
+  });
+});
+
 describe("uazapiInitInstance (provisioning)", () => {
   afterEach(() => vi.unstubAllGlobals());
 

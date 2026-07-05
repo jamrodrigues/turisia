@@ -103,7 +103,11 @@ export function UazapiConfig() {
         toast.error(data.error ?? 'Falha ao salvar.');
         return;
       }
-      toast.success('Configuração salva. Configure o webhook no painel uazapi.');
+      toast.success(
+        data.webhook_configured
+          ? 'Configuração salva — webhook configurado automaticamente no servidor.'
+          : 'Configuração salva. Configure o webhook manualmente no painel uazapi (URL abaixo).',
+      );
       setInstanceToken('');
       await refresh();
     } finally {

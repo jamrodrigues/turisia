@@ -3,7 +3,7 @@ import crypto from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
-import { uazapiInstanceStatus } from '@/lib/whatsapp/uazapi-api'
+import { uazapiInstanceStatus, uazapiSetWebhook } from '@/lib/whatsapp/uazapi-api'
 
 /**
  * uazapi provider configuration (admin/operator only — the settings
@@ -211,9 +211,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'failed to save config' }, { status: 500 })
     }
 
+    // Auto-configure the instance's webhook on the uazapi server —
+    // no manual panel step. Best-effort: if it fails (older server
+    // without /webhook), the UI still shows the URL to paste by hand.
+    const webhookUrl = `${siteUrl()}/api/uazapi/webhook?secret=${webhookSecret}`
+    let webhookConfigured = false
+    try {
+      await uazapiSetWebhook(
+        { baseUrl: base_url, token: instance_token },
+        { url: webhookUrl },
+      )
+      webhookConfigured = true
+    } catch (err) {
+      console.warn(
+        '[uazapi config] auto webhook setup failed (configure manually):',
+        err instanceof Error ? err.message : err,
+      )
+    }
+
     return NextResponse.json({
       ok: true,
-      webhook_url: `${siteUrl()}/api/uazapi/webhook?secret=${webhookSecret}`,
+      webhook_url: webhookUrl,
+      webhook_configured: webhookConfigured,
     })
   } catch (err) {
     console.error('[uazapi config] POST failed:', err)

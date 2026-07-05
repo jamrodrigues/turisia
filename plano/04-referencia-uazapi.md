@@ -88,14 +88,25 @@ Baileys — TRATAR COMO HIPÓTESE ATÉ CONFIRMAR):
    `message_id`, `fromMe` → ignorar/gravar como outbound, `type` → `content_type`).
 5. Testar mídia (imagem/áudio) para mapear `content`.
 
-## Como configurar o webhook da instância
+## Como configurar o webhook da instância — ✅ CONFIRMADO NO SERVIDOR REAL
 
-Há endpoint(s) de webhook no uazapi (a busca mostrou "Ver Webhook" na coleção Postman v2). Confirmar o path exato
-(algo como `POST /instance/updatewebhook` ou config no painel). Campos típicos: **URL**, **eventos habilitados**
-(receber mensagens, fromMe, status), e às vezes um **segredo**. Configurar:
-- URL = `https://DEPLOY-DO-CLIENTE/api/uazapi/webhook`
-- Eventos = mensagens recebidas (+ enviadas/status se quiser espelhar tudo no inbox)
-- Segredo = valor guardado no `whatsapp_config` do cliente para validar no CRM.
+Confirmado ao vivo contra `cloudefender.uazapi.com` (uazapiGO v2, 2026-07-05):
+
+```
+POST /webhook            (header: token da instância)
+Body: { "url": "https://DEPLOY/api/uazapi/webhook?secret=...", "events": ["messages"], "enabled": true }
+→ [ { "id", "url", "enabled", "events", "excludeMessages", "addUrlEvents", "addUrlTypesMessages" } ]
+GET /webhook             → mesmo array (null quando nenhum configurado)
+```
+
+O CRM **configura isso automaticamente** ao salvar a config uazapi (`/api/uazapi/config` POST →
+`uazapiSetWebhook`). O segredo vai na query string da URL e é validado (decriptado) na rota inbound.
+
+Também confirmados ao vivo:
+- `POST /instance/init {name}` (header `admintoken`) → `{ instance: { token, id, status, ... } }`
+- `GET /instance/status` (header `token`) → `{ instance: { status: 'disconnected'|'connected', qrcode, paircode, ... } }`
+- `GET /instance/all` (header `admintoken`) → array de instâncias
+- Envelope de erro: `{ "code": 404, "message": "Not Found.", "data": {} }`
 
 ## Diferenças-chave vs Meta Cloud API (impacto no código)
 
