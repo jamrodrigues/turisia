@@ -1,5 +1,6 @@
-import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { providerOf, providerSendText } from '@/lib/whatsapp/sender'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -92,13 +93,21 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error('WhatsApp not configured for this account')
   }
 
-  const accessToken = decrypt(config.access_token)
+  // Approved message templates are a Meta Cloud API concept — uazapi
+  // sends free-form text with no template registry, so an automation
+  // configured with a template action on a uazapi account is a setup
+  // error we surface loudly instead of silently mis-sending.
+  if (input.kind === 'template' && providerOf(config) === 'uazapi') {
+    throw new Error(
+      'Message templates are Meta-only. This account uses uazapi — switch the automation action to a plain text message.',
+    )
+  }
 
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'template') {
       const r = await sendTemplateMessage({
         phoneNumberId: config.phone_number_id,
-        accessToken,
+        accessToken: decrypt(config.access_token),
         to: phone,
         templateName: input.templateName,
         language: input.language,
@@ -106,9 +115,8 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
       })
       return r.messageId
     }
-    const r = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
+    const r = await providerSendText({
+      config,
       to: phone,
       text: input.text,
     })

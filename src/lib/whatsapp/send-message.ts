@@ -22,11 +22,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
-  sendTextMessage,
   sendTemplateMessage,
-  sendMediaMessage,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api';
+import {
+  providerOf,
+  providerSendMedia,
+  providerSendText,
+} from '@/lib/whatsapp/sender';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
@@ -234,22 +237,39 @@ export async function sendMessageToConversation(
     );
   }
 
-  const accessToken = decrypt(config.access_token);
+  const provider = providerOf(config);
 
-  // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
-  if (isLegacyFormat(config.access_token)) {
-    void db
-      .from('whatsapp_config')
-      .update({ access_token: encrypt(accessToken) })
-      .eq('id', config.id)
-      .then(({ error }: { error: { message: string } | null }) => {
-        if (error) {
-          console.warn(
-            '[send-message] access_token GCM upgrade failed:',
-            error.message
-          );
-        }
-      });
+  // Meta-only: decrypt for the template path below + self-heal legacy
+  // CBC ciphertexts (fire-and-forget; idempotent). uazapi rows carry a
+  // placeholder access_token that must not be decrypted.
+  let accessToken = '';
+  if (provider === 'meta') {
+    accessToken = decrypt(config.access_token);
+    if (isLegacyFormat(config.access_token)) {
+      void db
+        .from('whatsapp_config')
+        .update({ access_token: encrypt(accessToken) })
+        .eq('id', config.id)
+        .then(({ error }: { error: { message: string } | null }) => {
+          if (error) {
+            console.warn(
+              '[send-message] access_token GCM upgrade failed:',
+              error.message
+            );
+          }
+        });
+    }
+  }
+
+  // Approved templates are a Meta Cloud API concept; uazapi has no
+  // template registry (free-form text is always allowed — no 24h
+  // window). Surface a clear error instead of a confusing Meta call.
+  if (messageType === 'template' && provider === 'uazapi') {
+    throw new SendMessageError(
+      'template_unsupported_provider',
+      'Message templates are Meta-only. This account uses uazapi — send a regular text message instead.',
+      400
+    );
   }
 
   // Resolve the reply target to its Meta message_id. The parent must
@@ -317,9 +337,8 @@ export async function sendMessageToConversation(
       return result.messageId;
     }
     if (isMediaKind) {
-      const result = await sendMediaMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      const result = await providerSendMedia({
+        config,
         to: phone,
         kind: messageType as MediaKind,
         link: mediaUrl!,
@@ -329,9 +348,8 @@ export async function sendMessageToConversation(
       });
       return result.messageId;
     }
-    const result = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
+    const result = await providerSendText({
+      config,
       to: phone,
       text: contentText!,
       contextMessageId,
