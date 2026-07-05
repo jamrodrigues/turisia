@@ -4,24 +4,24 @@
 > **Não pule etapas** — cada fase valida a anterior.
 
 ## Fase 00 — Baseline
-- [ ] Repo privado (fork wacrm, MIT preservada), branch `feat/uazapi-provider`.
-- [ ] Supabase de teste + migrations `001..030` aplicadas.
-- [ ] `.env.local` preenchido; `npm install`; `typecheck` + `test` verdes; `npm run dev` abre o dashboard.
-- [ ] Arquivos-chave lidos e premissas de `03-referencia-wacrm.md` confirmadas.
+- [x] Repo privado (fork wacrm, MIT preservada), branch `feat/uazapi-provider`.
+- [x] Supabase de teste + migrations `001..030` aplicadas.
+- [x] `.env.local` preenchido; `npm install`; `typecheck` + `test` verdes; `npm run dev` abre o dashboard.
+- [x] Arquivos-chave lidos e premissas de `03-referencia-wacrm.md` confirmadas.
 
 ## Fase 01 — Adapter uazapi
-- [ ] Migration `031` (provider) aplicada.
-- [ ] `src/lib/whatsapp/uazapi-api.ts` (send text/media/react) + `uazapi-api.test.ts` verdes.
-- [ ] Dispatcher por provider em `flows/meta-send.ts` e `automations/meta-send.ts` (Meta segue 100%).
-- [ ] `processInboundMessage` extraído (`src/lib/whatsapp/process-inbound.ts`); webhook Meta refatorado sem regressão.
-- [ ] Rota `src/app/api/uazapi/webhook/route.ts` (autentica segredo → normaliza → `processInboundMessage`).
-- [ ] **Payload real do uazapi capturado** (texto + imagem + áudio) e mapeado.
-- [ ] Grupos (`@g.us`) e `status@broadcast` ignorados; tipos desconhecidos degradam p/ texto (sem quebrar INSERT).
-- [ ] Mídia recebida salva no Supabase Storage (infra 023); dedup por `message_id` (índice 034).
-- [ ] `fromMe:true` → grava outbound + cala bot (`handoff_reason='manual_phone'`).
-- [ ] Guardas de janela 24h puladas p/ uazapi; broadcast em texto livre + rate-limit.
-- [ ] UI de config uazapi + conexão QR (admin).
-- [ ] Conversa bidirecional real pelo inbox, sem IA.
+- [x] Migration `031` (provider) aplicada.
+- [x] `src/lib/whatsapp/uazapi-api.ts` (send text/media/react) + `uazapi-api.test.ts` verdes.
+- [x] Dispatcher por provider em `flows/meta-send.ts` e `automations/meta-send.ts` (Meta segue 100%).
+- [x] `processInboundMessage` extraído (`src/lib/whatsapp/process-inbound.ts`); webhook Meta refatorado sem regressão.
+- [x] Rota `src/app/api/uazapi/webhook/route.ts` (autentica segredo → normaliza → `processInboundMessage`).
+- [x] **Payload real do uazapi capturado** (texto + imagem + áudio) e mapeado.
+- [x] Grupos (`@g.us`) e `status@broadcast` ignorados; tipos desconhecidos degradam p/ texto (sem quebrar INSERT).
+- [x] Mídia recebida salva no Supabase Storage (infra 023); dedup por `message_id` (índice 034).
+- [x] `fromMe:true` → grava outbound + cala bot (`handoff_reason='manual_phone'`).
+- [x] Guardas de janela 24h puladas p/ uazapi; broadcast em texto livre + rate-limit.
+- [x] UI de config uazapi + conexão QR (admin).
+- [x] Conversa bidirecional real pelo inbox, sem IA.
 
 ## Fase 02 — IA + handoff + n8n
 - [ ] Migrations `032`,`033`(,`034`) aplicadas; `loadAiConfig` expõe `aiTier`/n8n.
