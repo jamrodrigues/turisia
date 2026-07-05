@@ -10,6 +10,7 @@ import {
   findOrCreateConversation,
 } from '@/lib/whatsapp/process-inbound'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { decrypt } from '@/lib/whatsapp/encryption'
 
 /**
  * uazapi inbound webhook.
@@ -85,9 +86,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, skipped: 'unknown instance' })
   }
 
-  // Authenticate. A row without a secret is treated as misconfigured —
-  // reject rather than accept unauthenticated traffic.
-  if (!config.uazapi_webhook_secret || providedSecret !== config.uazapi_webhook_secret) {
+  // Authenticate. The secret is stored encrypted at rest (same
+  // encrypt() as tokens); a row without one is treated as
+  // misconfigured — reject rather than accept unauthenticated traffic.
+  let expectedSecret = ''
+  try {
+    expectedSecret = config.uazapi_webhook_secret
+      ? decrypt(config.uazapi_webhook_secret)
+      : ''
+  } catch {
+    // corrupted ciphertext → fall through to the mismatch branch
+  }
+  if (!expectedSecret || providedSecret !== expectedSecret) {
     console.warn(
       '[uazapi webhook] secret mismatch for instance:',
       event.instanceName,
