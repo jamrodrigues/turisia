@@ -17,9 +17,9 @@
 - [x] Rota `src/app/api/uazapi/webhook/route.ts` (autentica segredo → normaliza → `processInboundMessage`).
 - [x] **Payload real do uazapi capturado** (texto + imagem + áudio) e mapeado.
 - [x] Grupos (`@g.us`) e `status@broadcast` ignorados; tipos desconhecidos degradam p/ texto (sem quebrar INSERT).
-- [x] Mídia recebida salva no Supabase Storage (infra 023); dedup por `message_id` (índice 034).
-- [x] `fromMe:true` → grava outbound + cala bot (`handoff_reason='manual_phone'`).
-- [x] Guardas de janela 24h puladas p/ uazapi; broadcast em texto livre + rate-limit.
+- [x] Mídia recebida via `/message/download` do uazapi (URL decriptada, validado E2E). *Parcial: re-upload ao Supabase Storage ainda TODO (§1.7.3); dedup por `message_id` implementado no pipeline (índice da 034 vem na Fase 02).*
+- [x] `fromMe:true` → grava outbound + cala bot. *Parcial: `handoff_reason` só existe após migration 033 (Fase 02); hoje seta apenas `ai_autoreply_disabled`.*
+- [ ] Guardas de janela 24h p/ uazapi + broadcast texto livre + rate-limit. *Pendente — broadcast/24h não exercitados; tratar junto da Fase 02.*
 - [x] UI de config uazapi + conexão QR (admin).
 - [x] Conversa bidirecional real pelo inbox, sem IA.
 
