@@ -24,15 +24,15 @@
 - [x] Conversa bidirecional real pelo inbox, sem IA.
 
 ## Fase 02 — IA + handoff + n8n
-- [ ] Migrations `032`,`033`(,`034`) aplicadas; `loadAiConfig` expõe `aiTier`/n8n.
-- [ ] Switch de tier no inbound; `isBotEligible` compartilhado entre simple/advanced.
-- [ ] `dispatchInboundToN8n` + endpoint(s) protegidos por `x-crm-secret`.
-- [ ] n8n da clínica ajustado: entrada do CRM + Respond to Webhook; tools intactas.
-- [ ] Handoff nos 4 gatilhos (sentinela IA / n8n / manual / fromMe) + RPC `return_conversation_to_bot` + botão "devolver ao bot".
-- [ ] Debounce por conversa (`ai_debounce_until`): rajada → UMA resposta agregada.
-- [ ] Áudio transcrito antes da IA; transcrição visível no inbox; falha degrada.
-- [ ] Inbox mostra "aguardando humano" + notifica atendentes.
-- [ ] E2E: simple (clube-like) e advanced (clínica-like) com handoff nos dois sentidos.
+- [x] Migrations `032`,`033`,`034` aplicadas; `loadTierConfig` expõe `aiTier`/n8n.
+- [x] Switch de tier no inbound (`dispatchInboundToBrain`); `isBotEligible` compartilhado.
+- [x] `dispatchInboundToN8n` (round-trip, `x-crm-secret`, timeout 25s, cap atômico).
+- [ ] n8n da clínica ajustado (entrada do CRM + Respond to Webhook). *Lado do usuário — Fase 05.*
+- [x] Handoff: sentinela IA (já existia) / n8n / fromMe(`manual_phone`) / manual (assign) + RPC + botão "devolver ao robô".
+- [x] Debounce por conversa (`ai_debounce_until`, last-message-wins).
+- [x] Áudio transcrito (Whisper best-effort) antes da IA; grava no content_text; falha degrada.
+- [x] Inbox mostra "aguardando atendente". *Notificação (tabela notifications) — follow-up.*
+- [ ] E2E simple/advanced com handoff. *Pendente teste com chave OpenAI / fluxo n8n real.*
 
 ## Fase 03 — Papéis
 - [ ] Papel `agent` definido; guard `requireAdmin` nas rotas sensíveis.
