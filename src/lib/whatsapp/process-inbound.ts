@@ -21,7 +21,7 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
-import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { dispatchInboundToBrain } from '@/lib/ai/dispatch'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 
 function supabaseAdmin() {
@@ -249,9 +249,11 @@ export async function processNormalizedInbound(
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }
 
-  // AI auto-reply — only for plain text the flow runner did not consume.
+  // AI brain (tier-routed: off / simple built-in / advanced n8n) —
+  // only for plain text the flow runner did not consume. Debounces
+  // bursts and owns its try/catch.
   if (!flowConsumed && !input.interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
+    await dispatchInboundToBrain({
       accountId: input.accountId,
       conversationId: conversation.id,
       contactId: contactRecord.id,

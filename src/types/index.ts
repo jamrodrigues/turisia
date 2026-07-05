@@ -156,6 +156,9 @@ export interface Conversation {
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;
+  /** Handoff: true = bot stood down, awaiting a human (migration 029/033). */
+  ai_autoreply_disabled?: boolean;
+  handoff_reason?: string | null;
   created_at: string;
   updated_at: string;
   contact?: Contact;

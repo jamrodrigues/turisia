@@ -41,6 +41,26 @@ const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   anthropic: 'sk-ant-...',
 };
 
+type AiTier = 'off' | 'simple' | 'advanced';
+
+const AI_TIERS: { value: AiTier; label: string; desc: string }[] = [
+  {
+    value: 'off',
+    label: 'Desligado',
+    desc: 'Sem robô. Só atendimento humano.',
+  },
+  {
+    value: 'simple',
+    label: 'IA integrada',
+    desc: 'Responde com a IA embutida do CRM + base de conhecimento.',
+  },
+  {
+    value: 'advanced',
+    label: 'n8n (avançado)',
+    desc: 'Delega a um fluxo n8n com ferramentas (agenda, etc).',
+  },
+];
+
 export function AiConfig() {
   const { accountId, accountRole, profileLoading } = useAuth();
   const canEdit = accountRole ? canEditSettings(accountRole) : false;
@@ -51,6 +71,11 @@ export function AiConfig() {
   const [removing, setRemoving] = useState(false);
 
   const [configured, setConfigured] = useState(false);
+  const [aiTier, setAiTier] = useState<AiTier>('simple');
+  const [n8nWebhookUrl, setN8nWebhookUrl] = useState('');
+  const [n8nSecret, setN8nSecret] = useState('');
+  const [n8nSecretEdited, setN8nSecretEdited] = useState(false);
+  const [hasN8nSecret, setHasN8nSecret] = useState(false);
   const [provider, setProvider] = useState<AiProvider>('openai');
   const [model, setModel] = useState(AI_PROVIDER_DEFAULT_MODEL.openai);
   const [apiKey, setApiKey] = useState('');
@@ -80,6 +105,11 @@ export function AiConfig() {
         toast.error(data.error ?? 'Failed to load AI configuration');
         return;
       }
+      setAiTier(data.ai_tier ?? 'simple');
+      setN8nWebhookUrl(data.n8n_webhook_url ?? '');
+      setHasN8nSecret(Boolean(data.has_n8n_secret));
+      setN8nSecret('');
+      setN8nSecretEdited(false);
       if (data.configured) {
         setConfigured(true);
         setProvider(data.provider);
@@ -125,7 +155,13 @@ export function AiConfig() {
   const embeddingsKeyPayload = () =>
     embeddingsKeyEdited ? embeddingsKey.trim() || null : undefined;
 
+  // Same convention: untouched = unchanged; "Limpar" (edited + empty) = null;
+  // text = set.
+  const n8nSecretPayload = () =>
+    n8nSecretEdited ? n8nSecret.trim() || null : undefined;
+
   const buildBody = () => ({
+    ai_tier: aiTier,
     provider,
     model: model.trim(),
     api_key: keyPayload(),
@@ -134,6 +170,10 @@ export function AiConfig() {
     is_active: isActive,
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
+    ...(aiTier === 'advanced' && {
+      n8n_webhook_url: n8nWebhookUrl.trim() || null,
+      n8n_shared_secret: n8nSecretPayload(),
+    }),
   });
 
   const handleTest = async () => {
@@ -159,12 +199,18 @@ export function AiConfig() {
   };
 
   const handleSave = async () => {
-    if (!model.trim()) {
-      toast.error('Enter a model name.');
-      return;
+    if (aiTier === 'simple') {
+      if (!model.trim()) {
+        toast.error('Enter a model name.');
+        return;
+      }
+      if (!configured && !keyEdited) {
+        toast.error('Enter your API key.');
+        return;
+      }
     }
-    if (!configured && !keyEdited) {
-      toast.error('Enter your API key.');
+    if (aiTier === 'advanced' && !n8nWebhookUrl.trim()) {
+      toast.error('Informe a URL do webhook n8n.');
       return;
     }
     setSaving(true);
@@ -201,6 +247,11 @@ export function AiConfig() {
         setIsActive(false);
         setAutoReplyEnabled(false);
         setSystemPrompt('');
+        setAiTier('off');
+        setN8nWebhookUrl('');
+        setN8nSecret('');
+        setN8nSecretEdited(false);
+        setHasN8nSecret(false);
       } else {
         const data = await res.json();
         toast.error(data.error ?? 'Failed to remove.');
@@ -236,6 +287,102 @@ export function AiConfig() {
       )}
 
       <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Modo do robô</CardTitle>
+            <CardDescription>
+              Escolha como o CRM responde às mensagens recebidas.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {AI_TIERS.map((t) => (
+                <Button
+                  key={t.value}
+                  type="button"
+                  variant={aiTier === t.value ? 'default' : 'outline'}
+                  onClick={() => setAiTier(t.value)}
+                  disabled={disabled}
+                >
+                  {t.label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {AI_TIERS.find((t) => t.value === aiTier)?.desc}
+            </p>
+          </CardContent>
+        </Card>
+
+        {aiTier === 'advanced' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Fluxo n8n</CardTitle>
+              <CardDescription>
+                O CRM envia (POST) cada mensagem recebida para esta URL e espera{' '}
+                <code className="rounded bg-muted px-1">
+                  {'{ reply?, handoff? }'}
+                </code>{' '}
+                de volta.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="n8n-url">URL do webhook n8n</Label>
+                <Input
+                  id="n8n-url"
+                  value={n8nWebhookUrl}
+                  onChange={(e) => setN8nWebhookUrl(e.target.value)}
+                  placeholder="https://seu-n8n.exemplo.com/webhook/..."
+                  disabled={disabled}
+                  autoComplete="off"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="n8n-secret">
+                  Segredo compartilhado (x-crm-secret)
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="n8n-secret"
+                    type="password"
+                    value={n8nSecret}
+                    onChange={(e) => {
+                      setN8nSecret(e.target.value);
+                      setN8nSecretEdited(true);
+                    }}
+                    placeholder={
+                      hasN8nSecret && !n8nSecretEdited ? '•••••• (salvo)' : ''
+                    }
+                    disabled={disabled}
+                    autoComplete="off"
+                    className="flex-1"
+                  />
+                  {hasN8nSecret && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setN8nSecret('');
+                        setN8nSecretEdited(true);
+                      }}
+                      disabled={disabled}
+                    >
+                      Limpar
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Enviado no cabeçalho x-crm-secret em cada requisição. Deixe em
+                  branco para manter o segredo atual.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {aiTier === 'simple' && (
+          <>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -456,6 +603,8 @@ export function AiConfig() {
               : hasStoredEmbeddingsKey
           }
         />
+          </>
+        )}
 
         <div className="flex items-center justify-between">
           {configured ? (

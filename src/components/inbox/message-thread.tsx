@@ -26,6 +26,8 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Bot,
+  Hand,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -576,6 +578,30 @@ export function MessageThread({
     [conversation, onStatusChange]
   );
 
+  const [isReturningToBot, setIsReturningToBot] = useState(false);
+
+  // Re-enable the AI on a handed-off conversation. The RPC clears the
+  // handoff flag, unassigns the human, and resets the reply cap.
+  const handleReturnToBot = useCallback(async () => {
+    if (!conversation || isReturningToBot) return;
+    setIsReturningToBot(true);
+    try {
+      const res = await fetch(
+        `/api/conversations/${conversation.id}/return-to-bot`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? "Falha ao devolver para o robô.");
+        return;
+      }
+      toast.success("Conversa devolvida para o robô.");
+      onRefresh?.();
+    } finally {
+      setIsReturningToBot(false);
+    }
+  }, [conversation, isReturningToBot, onRefresh]);
+
   const handleOpenTemplates = useCallback(() => {
     setTemplateModalOpen(true);
   }, []);
@@ -853,6 +879,18 @@ export function MessageThread({
             <Clock className="h-3 w-3" />
             {sessionInfo.remaining}
           </Badge>
+          {/* Handoff indicator — the bot stood down (AI sentinel, n8n,
+              manual, or owner answered from the phone). Surfaces the
+              thread as needing a human. */}
+          {conversation.ai_autoreply_disabled && (
+            <Badge
+              variant="outline"
+              className="ml-1 hidden gap-1 border-amber-500/40 text-[10px] text-amber-500 sm:inline-flex"
+            >
+              <Hand className="h-3 w-3" />
+              Aguardando atendente
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -902,6 +940,23 @@ export function MessageThread({
               <RefreshCw
                 className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
               />
+            </button>
+          )}
+
+          {/* Return-to-bot — only when the bot has stood down. Re-enables
+              the AI (clears handoff, unassigns, resets the reply cap). */}
+          {conversation.ai_autoreply_disabled && (
+            <button
+              type="button"
+              onClick={handleReturnToBot}
+              disabled={isReturningToBot}
+              title="Devolver ao robô"
+              className={cn(
+                "inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-xs text-primary transition-colors hover:bg-muted disabled:opacity-60",
+              )}
+            >
+              <Bot className={cn("h-3.5 w-3.5", isReturningToBot && "animate-pulse")} />
+              <span className="hidden sm:inline">Devolver ao robô</span>
             </button>
           )}
 

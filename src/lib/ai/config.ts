@@ -80,6 +80,79 @@ export async function loadAiConfig(
   }
 }
 
+export type AiTier = 'off' | 'simple' | 'advanced'
+
+export interface TierConfig {
+  tier: AiTier
+  autoReplyEnabled: boolean
+  autoReplyMaxPerConversation: number
+  /** Advanced tier only. */
+  n8nWebhookUrl: string | null
+  n8nSharedSecret: string | null
+}
+
+interface TierConfigRow {
+  is_active: boolean
+  ai_tier: AiTier
+  auto_reply_enabled: boolean
+  auto_reply_max_per_conversation: number
+  n8n_webhook_url: string | null
+  n8n_shared_secret: string | null
+}
+
+/**
+ * Load the account's brain selector WITHOUT requiring a BYO LLM key.
+ *
+ * The advanced tier delegates to n8n (which owns the LLM), so an
+ * advanced-only account legitimately has no provider/api_key on
+ * ai_configs — loadAiConfig would return null for it. This lighter
+ * loader reads only the routing fields and decrypts the n8n secret.
+ *
+ * Returns null when there's no config, the master switch is off, or
+ * the tier is 'off' — all meaning "no bot", handled identically.
+ */
+export async function loadTierConfig(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<TierConfig | null> {
+  const { data, error } = await db
+    .from('ai_configs')
+    .select(
+      'is_active, ai_tier, auto_reply_enabled, auto_reply_max_per_conversation, n8n_webhook_url, n8n_shared_secret',
+    )
+    .eq('account_id', accountId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) return null
+
+  const row = data as TierConfigRow
+  if (!row.is_active) return null
+  if (row.ai_tier === 'off') return null
+
+  let n8nSharedSecret: string | null = null
+  if (row.n8n_shared_secret) {
+    try {
+      n8nSharedSecret = decrypt(row.n8n_shared_secret)
+    } catch {
+      // A mismatched ENCRYPTION_KEY here silently breaks the n8n
+      // handshake — leave a breadcrumb rather than fail opaque.
+      console.error(
+        `[ai config] n8n secret for account ${accountId} could not be decrypted — check ENCRYPTION_KEY.`,
+      )
+      n8nSharedSecret = null
+    }
+  }
+
+  return {
+    tier: row.ai_tier,
+    autoReplyEnabled: row.auto_reply_enabled,
+    autoReplyMaxPerConversation: row.auto_reply_max_per_conversation,
+    n8nWebhookUrl: row.n8n_webhook_url,
+    n8nSharedSecret,
+  }
+}
+
 /**
  * Load + decrypt just the embeddings key, independent of `is_active`.
  * Used by the knowledge-base ingest routes so the KB gets embedded (and

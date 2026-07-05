@@ -30,7 +30,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, api_key, embeddings_api_key',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, ai_tier, n8n_webhook_url, api_key, embeddings_api_key, n8n_shared_secret',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -44,13 +44,14 @@ export async function GET() {
     }
 
     if (!data) return NextResponse.json({ configured: false })
-    // The keys are selected only to derive the has_* flags; neither is
+    // Secrets are selected only to derive the has_* flags; none are
     // returned to the client.
-    const { api_key, embeddings_api_key, ...safe } = data
+    const { api_key, embeddings_api_key, n8n_shared_secret, ...safe } = data
     return NextResponse.json({
       configured: true,
       has_key: !!api_key,
       has_embeddings_key: !!embeddings_api_key,
+      has_n8n_secret: !!n8n_shared_secret,
       ...safe,
     })
   } catch (err) {
@@ -77,12 +78,37 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object') return bad('Invalid request body')
 
-    const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
+    // Brain selector. 'advanced' delegates to n8n (which owns the LLM),
+    // so provider/model/api_key are NOT required in that tier.
+    const tier =
+      body.ai_tier === 'off' || body.ai_tier === 'advanced'
+        ? body.ai_tier
+        : 'simple'
+    const needsLlmKey = tier === 'simple'
+
+    const n8nWebhookUrl =
+      typeof body.n8n_webhook_url === 'string' && body.n8n_webhook_url.trim()
+        ? body.n8n_webhook_url.trim()
+        : null
+    const rawN8nSecret =
+      typeof body.n8n_shared_secret === 'string' ? body.n8n_shared_secret.trim() : ''
+    const clearN8nSecret = body.n8n_shared_secret === null
+
+    if (tier === 'advanced' && !n8nWebhookUrl) {
+      return bad('n8n_webhook_url is required for the advanced tier')
+    }
+    if (n8nWebhookUrl && !/^https?:\/\//.test(n8nWebhookUrl)) {
+      return bad('n8n_webhook_url must be an http(s) URL')
+    }
+
+    // provider/model matter only for the built-in (simple) tier. In
+    // advanced/off they may be absent; default to keep the row valid.
+    const provider = (body.provider as AiProvider) ?? 'openai'
+    if (needsLlmKey && provider !== 'openai' && provider !== 'anthropic') {
       return bad('provider must be "openai" or "anthropic"')
     }
     const model = typeof body.model === 'string' ? body.model.trim() : ''
-    if (!model) return bad('model is required')
+    if (needsLlmKey && !model) return bad('model is required')
 
     const systemPrompt =
       typeof body.system_prompt === 'string' && body.system_prompt.trim()
@@ -113,30 +139,32 @@ export async function POST(request: Request) {
       .eq('account_id', accountId)
       .maybeSingle()
 
-    let apiKeyPlain: string
+    let apiKeyPlain: string | null = null
     if (rawKey) {
       apiKeyPlain = rawKey
     } else if (existing?.api_key) {
       try {
         apiKeyPlain = decrypt(existing.api_key)
       } catch {
-        return bad('Stored API key could not be decrypted — re-enter your key.')
+        // A corrupt stored key only blocks the simple tier (which uses
+        // it); advanced/off don't touch it.
+        if (needsLlmKey) {
+          return bad('Stored API key could not be decrypted — re-enter your key.')
+        }
       }
-    } else {
-      return bad('api_key is required')
+    } else if (needsLlmKey) {
+      return bad('api_key is required for the built-in (simple) tier')
     }
 
     // Only spend a provider round-trip when the credentials that affect
-    // reachability actually changed. A save that just flips a toggle or
-    // edits the system prompt on an existing, already-validated config
-    // skips the call — no wasted token/latency on the account's key.
+    // reachability actually changed AND the simple tier needs them.
     const credentialsChanged =
       !existing ||
       rawKey !== '' ||
       provider !== existing.provider ||
       model !== existing.model
 
-    if (credentialsChanged) {
+    if (needsLlmKey && apiKeyPlain && credentialsChanged) {
       try {
         await validateAiCredentials({
           provider,
@@ -180,16 +208,23 @@ export async function POST(request: Request) {
     const encryptedKey = rawKey ? encrypt(rawKey) : null
     const shared: Record<string, unknown> = {
       provider,
-      model,
+      model: model || null,
       system_prompt: systemPrompt,
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
+      ai_tier: tier,
+      n8n_webhook_url: n8nWebhookUrl,
     }
     if (rawEmbeddingsKey) {
       shared.embeddings_api_key = encrypt(rawEmbeddingsKey)
     } else if (clearEmbeddingsKey) {
       shared.embeddings_api_key = null
+    }
+    if (rawN8nSecret) {
+      shared.n8n_shared_secret = encrypt(rawN8nSecret)
+    } else if (clearN8nSecret) {
+      shared.n8n_shared_secret = null
     }
 
     if (existing) {
@@ -208,7 +243,9 @@ export async function POST(request: Request) {
       const { error: insErr } = await supabase.from('ai_configs').insert({
         account_id: accountId,
         created_by: userId,
-        api_key: encryptedKey, // guaranteed non-null: rawKey required when no existing row
+        // Non-null for the simple tier (rawKey required above); null is
+        // valid for advanced/off since migration 032 relaxed the column.
+        api_key: encryptedKey,
         ...shared,
       })
       if (insErr) {

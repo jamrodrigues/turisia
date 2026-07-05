@@ -235,8 +235,12 @@ async function mirrorFromMe(
       last_message_text: contentText || `[${contentType}]`,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      // The owner answered by hand — silence the bot on this thread.
+      // The owner answered by hand — silence the bot on this thread and
+      // record why (surfaces as "aguardando atendente"; migration 033).
       ai_autoreply_disabled: true,
+      handoff_at: new Date().toISOString(),
+      handoff_reason: 'manual_phone',
+      handoff_by: 'agent',
     })
     .eq('id', conversation.id)
 }
