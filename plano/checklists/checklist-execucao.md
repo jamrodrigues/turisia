@@ -36,9 +36,9 @@
 
 ## Fase 03 — Papéis
 - [ ] Papel `agent` definido; guard `requireAdmin` nas rotas sensíveis.
-- [ ] RLS não expõe segredos a papel de cliente.
-- [ ] UI esconde tubulação para `agent` (só inbox/contatos/pipeline).
-- [ ] Convite de atendente funciona; testes de acesso negado passam.
+- [x] RLS (035): SELECT de whatsapp_config/ai_configs = admin+; RPC de status sem segredos.
+- [x] Sidebar esconde tubulação p/ agent/viewer + redirect de rota no dashboard-shell.
+- [ ] Convite de atendente (fluxo já existe) + teste de acesso negado E2E. *Validar no onboarding.*
 
 ## Fase 03b — Tradução pt-BR
 - [ ] Dicionário central `src/lib/i18n/pt-br.ts` criado (objeto `t`, tipado, sem framework).
