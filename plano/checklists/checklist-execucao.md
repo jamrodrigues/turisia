@@ -41,14 +41,14 @@
 - [ ] Convite de atendente (fluxo já existe) + teste de acesso negado E2E. *Validar no onboarding.*
 
 ## Fase 03b — Tradução pt-BR
-- [ ] Dicionário central `src/lib/i18n/pt-br.ts` criado (objeto `t`, tipado, sem framework).
-- [ ] `lang="pt-BR"` no layout; helper de datas com locale `ptBR`; moeda BRL; DDI +55 default.
-- [ ] 9 áreas de UI varridas com o glossário → componentes usando `t.*` (ver fase-03b §3b.4).
-- [ ] URLs/rotas, tabelas e enums intactos (só superfície visível).
-- [ ] Prompt-base da IA em pt-BR + instrução "responda sempre em português do Brasil" (sentinela de handoff intacto).
-- [ ] Templates de e-mail do Supabase Auth traduzidos (repetir POR PROJETO — está no checklist por cliente).
-- [ ] Testes que asseram texto atualizados; `typecheck` + `test` verdes.
-- [ ] Navegação completa como `agent` e como `admin`: zero inglês visível.
+- [x] Dicionário `src/lib/i18n/pt-br.ts` (vocabulário comum) + `src/lib/dates.ts` (locale ptBR).
+- [x] `lang="pt-BR"`; datas em ptBR (date-fns + toLocaleDateString, 0 `en-US`); BRL por conta (seed).
+- [x] Superfícies do CLIENTE traduzidas (inbox, contatos, funis, auth, nav/header). *Admin (settings/automations/flows/broadcasts/dashboard) ainda em inglês — operador-facing; sweep posterior.*
+- [x] URLs/rotas/tabelas/enums intactos (só superfície visível).
+- [x] Prompt IA default pt-BR (sentinela `[[HANDOFF]]` intacto).
+- [ ] Templates de e-mail do Auth (pt-BR) — POR PROJETO no painel Supabase. *No checklist por cliente; feito no onboarding.*
+- [x] Typecheck/lint/build verdes; nenhum teste quebrado pela tradução.
+- [~] Cliente (agent) vê pt-BR nas telas dele. Admin ainda mistura inglês nas telas de tubulação — pendente sweep.
 
 ## Fase 04 — Provisionamento
 - [ ] `deploy/` (Docker Compose ou receita Vercel) parametrizável.
