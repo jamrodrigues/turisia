@@ -57,14 +57,17 @@
 - [ ] Piloto provisionado do zero só pelo checklist (< 1h).
 
 ## Fase 05 — Onboarding
-- [ ] Clínica (advanced/n8n) no ar e validada (agenda reflete no Supabase).
-- [ ] Clube (simple/embutido, sem n8n) no ar e validado (regras + handoff cedo).
-- [ ] Agência (advanced/n8n + pipeline) no ar e validada (lead → deal no Kanban).
-
+- [x] **Base modular**: presets de verticais (clinica/clube/agencia/generico) + `provision-client.mjs --vertical` (prompt, tier, funil+etapas, respostas rápidas, base de conhecimento).
+- [ ] Clínica (advanced/n8n) no ar e validada — *depende do número/n8n/domínio reais do cliente*.
+- [ ] Clube (simple, sem n8n) no ar e validado — *depende do cliente*.
+- [ ] Agência (advanced + pipeline) no ar e validada — *depende do cliente*.
 ## Fase 06 — Comercial
-- [ ] White-label básico; flag active/suspended no login.
-- [ ] Painel central com saúde das instâncias.
-- [ ] Diretrizes antiban por cliente.
+- [x] White-label por deploy (env: nome/logo/tema) — login + sidebar + título.
+- [x] Trava active/suspended/trial no login (migration 036 + `account_billing_status()` + tela bloqueada).
+- [x] Cobrança: webhook genérico `/api/billing/webhook` + `set-account-status.mjs`; doc de wiring Stripe/Mercado Pago.
+- [ ] Stripe/processador real conectado — *depende de conta/keys do usuário*.
+- [ ] Painel central de saúde das instâncias (multi-cliente) — *follow-up opcional*.
+- [x] Diretrizes antiban documentadas (fase-06 §6.6).
 
 ---
 
