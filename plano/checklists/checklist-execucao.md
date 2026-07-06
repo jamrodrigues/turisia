@@ -43,12 +43,12 @@
 ## Fase 03b — Tradução pt-BR
 - [x] Dicionário `src/lib/i18n/pt-br.ts` (vocabulário comum) + `src/lib/dates.ts` (locale ptBR).
 - [x] `lang="pt-BR"`; datas em ptBR (date-fns + toLocaleDateString, 0 `en-US`); BRL por conta (seed).
-- [x] Superfícies do CLIENTE traduzidas (inbox, contatos, funis, auth, nav/header). *Admin (settings/automations/flows/broadcasts/dashboard) ainda em inglês — operador-facing; sweep posterior.*
+- [x] TODAS as telas traduzidas (cliente + admin: inbox, contatos, funis, auth, settings, automations, flows, broadcasts, dashboard, agents, páginas). 0 inglês visível no scan.
 - [x] URLs/rotas/tabelas/enums intactos (só superfície visível).
 - [x] Prompt IA default pt-BR (sentinela `[[HANDOFF]]` intacto).
 - [ ] Templates de e-mail do Auth (pt-BR) — POR PROJETO no painel Supabase. *No checklist por cliente; feito no onboarding.*
 - [x] Typecheck/lint/build verdes; nenhum teste quebrado pela tradução.
-- [~] Cliente (agent) vê pt-BR nas telas dele. Admin ainda mistura inglês nas telas de tubulação — pendente sweep.
+- [x] Navegação completa (agent + admin): zero inglês visível.
 
 ## Fase 04 — Provisionamento
 - [ ] `deploy/` (Docker Compose ou receita Vercel) parametrizável.
