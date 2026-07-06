@@ -27,6 +27,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
+import { t } from "@/lib/i18n/pt-br";
 
 // Per-role chip metadata used in the sidebar's account strip + the
 // Members tab roster. Keeping this near both consumers in a single
@@ -38,28 +39,28 @@ const ROLE_CHIP: Record<
 > = {
   owner: {
     icon: Crown,
-    label: "Owner",
+    label: t.roles.owner,
     // Amber: scarce, immutable, "the boss" — gets visual emphasis.
     className:
       "border-amber-500/40 bg-amber-500/10 text-amber-300",
   },
   admin: {
     icon: Shield,
-    label: "Admin",
+    label: t.roles.admin,
     // Primary-tinted: significant but not as scarce as owner.
     className:
       "border-primary/40 bg-primary/10 text-primary",
   },
   agent: {
     icon: UserCog,
-    label: "Agent",
+    label: t.roles.agent,
     // Neutral slate: the operational default.
     className:
       "border-border bg-muted text-foreground",
   },
   viewer: {
     icon: User,
-    label: "Viewer",
+    label: t.roles.viewer,
     // Muted slate: read-only role; visually quieter than agent.
     className:
       "border-border bg-card text-muted-foreground",
@@ -96,19 +97,19 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, adminOnly: true },
-  { href: "/inbox", label: "Inbox", icon: MessageSquare },
-  { href: "/notifications", label: "Notifications", icon: Bell },
-  { href: "/contacts", label: "Contacts", icon: Users },
-  { href: "/pipelines", label: "Pipelines", icon: GitBranch },
-  { href: "/broadcasts", label: "Broadcasts", icon: Radio, adminOnly: true },
-  { href: "/automations", label: "Automations", icon: Zap, adminOnly: true },
-  { href: "/flows", label: "Flows", icon: Workflow, beta: true, adminOnly: true },
-  { href: "/agents", label: "AI Agents", icon: Bot, adminOnly: true },
+  { href: "/dashboard", label: t.nav.dashboard, icon: LayoutDashboard, adminOnly: true },
+  { href: "/inbox", label: t.nav.inbox, icon: MessageSquare },
+  { href: "/notifications", label: t.nav.notifications, icon: Bell },
+  { href: "/contacts", label: t.nav.contacts, icon: Users },
+  { href: "/pipelines", label: t.nav.pipelines, icon: GitBranch },
+  { href: "/broadcasts", label: t.nav.broadcasts, icon: Radio, adminOnly: true },
+  { href: "/automations", label: t.nav.automations, icon: Zap, adminOnly: true },
+  { href: "/flows", label: t.nav.flows, icon: Workflow, beta: true, adminOnly: true },
+  { href: "/agents", label: t.nav.aiAgents, icon: Bot, adminOnly: true },
 ];
 
 const bottomNavItems: NavItem[] = [
-  { href: "/settings", label: "Settings", icon: Settings, adminOnly: true },
+  { href: "/settings", label: t.nav.settings, icon: Settings, adminOnly: true },
 ];
 
 interface SidebarProps {
@@ -206,7 +207,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               <MessageSquare className="h-4 w-4" />
             </div>
             <span className="text-sm font-semibold text-foreground">
-              CRM Template for WhatsApp
+              CRM WhatsApp
             </span>
           </Link>
           <button
@@ -404,7 +405,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
               >
                 <LogOut className="size-4" />
-                Sign out
+                {t.common.signOut}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

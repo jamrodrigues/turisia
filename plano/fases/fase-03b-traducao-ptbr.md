@@ -15,6 +15,12 @@ nenhum arquivo de dicionário/strings/messages, nada nos docs. Escala real: **12
 só em atributos (`placeholder`/`title`/`aria-label`) + os textos JSX — estimativa 600-900 strings visíveis.
 A varredura é inevitável; a escolha é só ONDE as traduções ficam.
 
+> **Nota de execução (o que foi realmente feito):** abordagem **híbrida** para permitir tradução em paralelo por
+> vários agentes sem conflito num único arquivo quente. **Vocabulário compartilhado** (nav, papéis, ações comuns,
+> status) vive no dicionário `src/lib/i18n/pt-br.ts` (`t.*`); **strings específicas de cada área** (inbox, contatos,
+> funis, auth) foram traduzidas **inline no próprio componente**. Migrar tudo para o dicionário é um refactor
+> posterior opcional. O glossário abaixo vale para os dois casos.
+
 **Escolhido: dicionário central leve, SEM framework** (`src/lib/i18n/pt-br.ts`):
 
 ```ts
