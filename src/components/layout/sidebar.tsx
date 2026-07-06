@@ -87,22 +87,28 @@ interface NavItem {
    * Purely informational — doesn't affect routing or access.
    */
   beta?: boolean;
+  /**
+   * Plumbing sections (settings-class). Hidden from agent/viewer — the
+   * managed-SaaS client only sees inbox/contacts/pipelines/notifications.
+   * Nav hiding is UX only; the real gates are RLS + route requireRole.
+   */
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, adminOnly: true },
   { href: "/inbox", label: "Inbox", icon: MessageSquare },
   { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/pipelines", label: "Pipelines", icon: GitBranch },
-  { href: "/broadcasts", label: "Broadcasts", icon: Radio },
-  { href: "/automations", label: "Automations", icon: Zap },
-  { href: "/flows", label: "Flows", icon: Workflow, beta: true },
-  { href: "/agents", label: "AI Agents", icon: Bot },
+  { href: "/broadcasts", label: "Broadcasts", icon: Radio, adminOnly: true },
+  { href: "/automations", label: "Automations", icon: Zap, adminOnly: true },
+  { href: "/flows", label: "Flows", icon: Workflow, beta: true, adminOnly: true },
+  { href: "/agents", label: "AI Agents", icon: Bot, adminOnly: true },
 ];
 
-const bottomNavItems = [
-  { href: "/settings", label: "Settings", icon: Settings },
+const bottomNavItems: NavItem[] = [
+  { href: "/settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
 
 interface SidebarProps {
@@ -114,6 +120,17 @@ interface SidebarProps {
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
+
+  // Managed-SaaS role gate: the client logs in as agent/viewer and only
+  // sees the customer-facing sections. Owner/admin (the operator) see
+  // the plumbing. This hides nav; RLS + route requireRole enforce it.
+  const canSeePlumbing = accountRole === "owner" || accountRole === "admin";
+  const visibleNavItems = navItems.filter(
+    (i) => !i.adminOnly || canSeePlumbing,
+  );
+  const visibleBottomNavItems = bottomNavItems.filter(
+    (i) => !i.adminOnly || canSeePlumbing,
+  );
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
   // Only surface the account-name strip when it actually carries
@@ -205,7 +222,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Main navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/dashboard" && pathname.startsWith(item.href));
@@ -268,7 +285,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           <div className="my-4 border-t border-border" />
 
           <ul className="flex flex-col gap-1">
-            {bottomNavItems.map((item) => {
+            {visibleBottomNavItems.map((item) => {
               const isActive = pathname.startsWith(item.href);
               return (
                 <li key={item.href}>

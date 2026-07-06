@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { uazapiInstanceStatus, uazapiSetWebhook } from '@/lib/whatsapp/uazapi-api'
 
@@ -16,19 +16,6 @@ import { uazapiInstanceStatus, uazapiSetWebhook } from '@/lib/whatsapp/uazapi-ap
  *          'uazapi' and stores the synthetic phone_number_id
  * DELETE → clear the uazapi fields and flip the account back to 'meta'
  */
-
-async function resolveAccountId(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('account_id')
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (error || !data?.account_id) return null
-  return data.account_id as string
-}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _adminClient: any = null
@@ -48,15 +35,8 @@ function siteUrl(): string {
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-    }
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json({ configured: false, reason: 'no_account' })
-    }
+    // Admin-only: the response includes the webhook URL with its secret.
+    const { accountId } = await requireRole('admin')
 
     const { data: config } = await supabaseAdmin()
       .from('whatsapp_config')
@@ -105,21 +85,13 @@ export async function GET() {
     })
   } catch (err) {
     console.error('[uazapi config] GET failed:', err)
-    return NextResponse.json({ error: 'internal error' }, { status: 500 })
+    return toErrorResponse(err)
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-    }
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json({ error: 'no account' }, { status: 400 })
-    }
+    const { accountId, userId } = await requireRole('admin')
 
     const body = await request.json()
     const base_url = String(body.base_url || '').trim().replace(/\/$/, '')
@@ -179,7 +151,7 @@ export async function POST(request: Request) {
 
     const row = {
       account_id: accountId,
-      user_id: user.id,
+      user_id: userId,
       provider: 'uazapi',
       // Synthetic, stable, unique — satisfies the NOT NULL + UNIQUE
       // constraints from migrations 001/013 (see 031's header comment).
@@ -236,21 +208,13 @@ export async function POST(request: Request) {
     })
   } catch (err) {
     console.error('[uazapi config] POST failed:', err)
-    return NextResponse.json({ error: 'internal error' }, { status: 500 })
+    return toErrorResponse(err)
   }
 }
 
 export async function DELETE() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-    }
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json({ error: 'no account' }, { status: 400 })
-    }
+    const { accountId } = await requireRole('admin')
 
     const { error } = await supabaseAdmin()
       .from('whatsapp_config')
@@ -271,6 +235,6 @@ export async function DELETE() {
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[uazapi config] DELETE failed:', err)
-    return NextResponse.json({ error: 'internal error' }, { status: 500 })
+    return toErrorResponse(err)
   }
 }

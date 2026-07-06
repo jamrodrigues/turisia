@@ -1,19 +1,33 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
+
+// Plumbing routes an agent/viewer (the managed-SaaS client) must not
+// reach even by typing the URL. Real enforcement is RLS + route
+// requireRole; this is the matching client-side redirect so they land
+// on the inbox instead of a broken/empty admin page.
+const ADMIN_ONLY_PREFIXES = [
+  "/dashboard",
+  "/settings",
+  "/automations",
+  "/flows",
+  "/agents",
+  "/broadcasts",
+];
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
 // client components can't export Next's metadata object.
 
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, accountRole, profileLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   // Sidebar drawer state — only used on mobile. On lg+ the sidebar is
   // always visible and this stays at `false` (ignored by the component).
@@ -25,6 +39,16 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
       router.push("/login");
     }
   }, [user, loading, router]);
+
+  // Bounce agent/viewer off plumbing routes (URL-typed or bookmarked).
+  useEffect(() => {
+    if (loading || profileLoading || !user) return;
+    const canSeePlumbing = accountRole === "owner" || accountRole === "admin";
+    if (canSeePlumbing) return;
+    if (ADMIN_ONLY_PREFIXES.some((p) => pathname.startsWith(p))) {
+      router.replace("/inbox");
+    }
+  }, [loading, profileLoading, user, accountRole, pathname, router]);
 
   if (loading) {
     return (

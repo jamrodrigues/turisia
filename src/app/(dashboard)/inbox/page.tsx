@@ -187,13 +187,12 @@ export default function InboxPage() {
         return;
       }
 
-      const { data } = await supabase
-        .from("whatsapp_config")
-        .select("status")
-        .eq("account_id", accountId)
-        .maybeSingle();
-
-      setWhatsappConnected(data?.status === "connected");
+      // Secrets-free status RPC (migration 035) — the raw
+      // whatsapp_config table is admin-only now, so agents read the
+      // connected flag through here without seeing any tokens.
+      const { data } = await supabase.rpc("account_integration_status");
+      const row = Array.isArray(data) ? data[0] : data;
+      setWhatsappConnected(row?.whatsapp_connected === true);
     };
 
     checkConnection();

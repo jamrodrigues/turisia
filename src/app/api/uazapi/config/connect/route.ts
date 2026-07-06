@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { requireRole, ForbiddenError, UnauthorizedError } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   uazapiConnectInstance,
@@ -33,29 +33,23 @@ async function loadCtx(): Promise<
   | { ok: true; ctx: { baseUrl: string; token: string } }
   | { ok: false; response: NextResponse }
 > {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
+  let accountId: string
+  try {
+    ;({ accountId } = await requireRole('admin'))
+  } catch (err) {
+    const status = err instanceof ForbiddenError ? 403 : err instanceof UnauthorizedError ? 401 : 500
     return {
       ok: false,
-      response: NextResponse.json({ error: 'unauthorized' }, { status: 401 }),
-    }
-  }
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('account_id')
-    .eq('user_id', user.id)
-    .maybeSingle()
-  if (!profile?.account_id) {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: 'no account' }, { status: 400 }),
+      response: NextResponse.json(
+        { error: err instanceof Error ? err.message : 'unauthorized' },
+        { status },
+      ),
     }
   }
   const { data: config } = await supabaseAdmin()
     .from('whatsapp_config')
     .select('provider, uazapi_base_url, uazapi_instance_token')
-    .eq('account_id', profile.account_id)
+    .eq('account_id', accountId)
     .maybeSingle()
   if (
     !config ||
