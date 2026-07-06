@@ -28,10 +28,19 @@ Branch: `feat/uazapi-provider` · base: wacrm 0.7.0 (`upstream/main`) · Supabas
 - `npm run typecheck` ✅ · `npm run build` ✅ · `npm run test` → 637 ok / **5 falhas pré-existentes** (locale da máquina: `currency.test.ts` + `date-utils.test.ts` — não são regressão, existem no upstream nesta máquina).
 - Provider Meta preservado (dispatcher só desvia quando `provider='uazapi'`).
 
+## Code-review (Fable 5, high) — 10 findings CORRIGIDOS (commit 82bdcf8)
+Todos os 10 achados resolvidos e portões verdes. Resumo: #1 fromMe não
+renomeia contato com nome do dono; #2 áudio chega no cérebro IA; #3 dedup
+de echo com retry (sem duplicar/mutar bot em race); #4 config uazapi não
+destrói creds Meta; #5 uazapi sem janela 24h no composer; #6 broadcast/react
+guardam por provider; #7 `message_id` NULL (não `''`) evita colisão no índice
+034; #8 n8n stand-down vs automations; #9 tier avançado respeita
+`auto_reply_enabled`; #10 debounce monotônico (vencedor único).
+
 ## Pendências técnicas conhecidas (candidatas a review/fix)
 1. **Mídia recebida** usa URL do servidor uazapi (não re-sobe pro Supabase Storage) — TODO em `uazapi/webhook/route.ts` (`fase-01 §1.7.3`).
-2. **Broadcast** ainda é template-Meta; falta caminho texto-livre + rate-limit pro uazapi.
-3. **Guarda de janela 24h** não revisada para pular no provider uazapi em todos os caminhos de envio.
+2. **Broadcast** ainda é template-Meta; falta caminho texto-livre + rate-limit pro uazapi (review #6 apenas BLOQUEIA broadcast em uazapi com erro claro; o caminho free-text é trabalho novo).
+3. **Guarda de janela 24h** — resolvida no composer do inbox (review #5); revisar se algum outro caminho de envio ainda aplica a regra Meta em uazapi.
 4. **Transcrição** exige chave OpenAI (Whisper); contas advanced sem chave dependem do n8n transcrever.
 5. **Debounce** usa `setTimeout` dentro de `after()` (ok no maxDuration=60); avaliar fila externa se escalar.
 6. **Notificação de handoff** (tabela `notifications`) não dispara — só o flag `ai_autoreply_disabled` + badge no inbox. `notifications.type` tem CHECK só `conversation_assigned` (precisaria migration p/ novo tipo).
