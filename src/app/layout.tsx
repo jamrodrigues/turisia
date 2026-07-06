@@ -6,24 +6,29 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { ThemedToaster } from "@/components/themed-toaster";
 import {
   DEFAULT_MODE,
-  DEFAULT_THEME,
   MODE_STORAGE_KEY,
   MODES,
   STORAGE_KEY,
   THEME_IDS,
 } from "@/lib/themes";
+import { getBrand } from "@/lib/brand";
 
 const inter = Inter({
   variable: "--font-sans",
   subsets: ["latin"],
 });
 
+// White-label per deploy (env). The brand theme becomes the default
+// accent; users can still switch. See src/lib/brand.ts.
+const brand = getBrand();
+const BRAND_THEME = brand.theme;
+
 export const metadata: Metadata = {
   title: {
-    default: "wacrm",
-    template: "%s — wacrm",
+    default: brand.name,
+    template: `%s — ${brand.name}`,
   },
-  description: "Self-hostable CRM template for WhatsApp.",
+  description: "CRM de WhatsApp com atendimento por IA e humano.",
   robots: {
     index: false,
     follow: false,
@@ -58,7 +63,7 @@ const THEME_BOOT_SCRIPT = `
   var d = document.documentElement;
   try {
     var THEME_KEY = ${JSON.stringify(STORAGE_KEY)};
-    var THEME_DEFAULT = ${JSON.stringify(DEFAULT_THEME)};
+    var THEME_DEFAULT = ${JSON.stringify(BRAND_THEME)};
     var THEMES = ${JSON.stringify(THEME_IDS)};
     var savedTheme = localStorage.getItem(THEME_KEY);
     d.dataset.theme = THEMES.indexOf(savedTheme) !== -1 ? savedTheme : THEME_DEFAULT;
@@ -69,7 +74,7 @@ const THEME_BOOT_SCRIPT = `
     var savedMode = localStorage.getItem(MODE_KEY);
     d.dataset.mode = MODES.indexOf(savedMode) !== -1 ? savedMode : MODE_DEFAULT;
   } catch (_e) {
-    d.dataset.theme = ${JSON.stringify(DEFAULT_THEME)};
+    d.dataset.theme = ${JSON.stringify(BRAND_THEME)};
     d.dataset.mode = ${JSON.stringify(DEFAULT_MODE)};
   }
 })();
@@ -83,7 +88,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      data-theme={DEFAULT_THEME}
+      data-theme={BRAND_THEME}
       data-mode={DEFAULT_MODE}
       className={`${inter.variable} h-full antialiased`}
       // The `theme-boot` script below rewrites `data-theme` and

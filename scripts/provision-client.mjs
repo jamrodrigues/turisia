@@ -68,11 +68,31 @@ const uazapiBase = String(opt('uazapi-base', 'UAZAPI_BASE_URL', true)).replace(/
 const uazapiAdmin = opt('uazapi-admin', 'UAZAPI_ADMIN_KEY', true)
 const accountId = opt('account-id', null, true)
 const adminUserId = opt('admin-user-id', null, true)
-const aiTier = opt('ai-tier', null) // off | simple | advanced
+const verticalId = opt('vertical', null) // clinica | clube | agencia | generico
 const n8nUrl = opt('n8n-url', null)
 const n8nSecret = opt('n8n-secret', null)
 const dbUrl = opt('db-url', 'SUPABASE_DB_URL')
 const runMigrations = !!args['run-migrations']
+
+// Load the vertical preset (shared with the app — src/lib/verticals).
+// A preset supplies the AI tier + pt-BR system prompt + pipeline stages.
+// --ai-tier still works as an explicit override.
+let preset = null
+if (verticalId) {
+  const { readFileSync } = await import('node:fs')
+  const { fileURLToPath } = await import('node:url')
+  const { dirname, join } = await import('node:path')
+  const here = dirname(fileURLToPath(import.meta.url))
+  const presets = JSON.parse(
+    readFileSync(join(here, '../src/lib/verticals/presets.json'), 'utf8'),
+  )
+  preset = presets[verticalId]
+  if (!preset) {
+    console.error(`Unknown --vertical "${verticalId}". Options: ${Object.keys(presets).join(', ')}`)
+    process.exit(1)
+  }
+}
+const aiTier = opt('ai-tier', null) ?? preset?.aiTier ?? null // off | simple | advanced
 
 // ---------- crypto (mirrors src/lib/whatsapp/encryption.ts GCM) ----------
 function encrypt(text) {
@@ -200,6 +220,7 @@ async function main() {
       is_active: aiTier !== 'off',
       auto_reply_enabled: aiTier !== 'off',
       auto_reply_max_per_conversation: 5,
+      ...(preset?.systemPrompt ? { system_prompt: preset.systemPrompt } : {}),
       ...(n8nUrl ? { n8n_webhook_url: n8nUrl } : {}),
       ...(n8nSecret ? { n8n_shared_secret: encrypt(n8nSecret) } : {}),
       updated_at: new Date().toISOString(),
@@ -211,11 +232,60 @@ async function main() {
     })
   }
 
+  // 5. vertical preset: tag the account + seed a pipeline with stages
+  if (preset) {
+    console.log(`5/5 Applying vertical "${preset.label}"…`)
+    await rest(`accounts?id=eq.${accountId}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ vertical: verticalId }),
+    })
+    // Create the pipeline only if the account has none yet (idempotent-ish).
+    const existingPipes = await rest(
+      `pipelines?account_id=eq.${accountId}&select=id&limit=1`,
+    )
+    if (!existingPipes || existingPipes.length === 0) {
+      const [pipe] = await rest('pipelines', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+          account_id: accountId,
+          user_id: adminUserId,
+          name: preset.pipelineName,
+        }),
+      })
+      const stages = (preset.pipelineStages || []).map((s, i) => ({
+        pipeline_id: pipe.id,
+        name: s.name,
+        color: s.color,
+        position: i,
+      }))
+      if (stages.length) {
+        await rest('pipeline_stages', {
+          method: 'POST',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify(stages),
+        })
+      }
+      console.log(`    Pipeline "${preset.pipelineName}" + ${stages.length} etapas.`)
+    } else {
+      console.log('    Pipeline já existe — pulando criação.')
+    }
+  }
+
   console.log('\n✅ Done. Remaining MANUAL steps:')
   console.log(`   • Log into ${deployUrl} as the admin, open Settings → WhatsApp → uazapi, click "Conectar (QR)" and scan.`)
   console.log('   • Invite the client\'s attendants as role "agent".')
   if (aiTier === 'simple') console.log('   • Add the AI provider key + knowledge base in Settings → AI.')
   if (aiTier === 'advanced') console.log('   • Point the n8n flow\'s webhook-in at the CRM and add a Respond-to-Webhook returning { reply | handoff }.')
+  if (preset?.quickReplies?.length) {
+    console.log(`   • Respostas rápidas sugeridas p/ "${preset.label}":`)
+    for (const q of preset.quickReplies) console.log(`       - ${q}`)
+  }
+  if (preset?.knowledgeSeed) {
+    console.log('   • Base de conhecimento inicial (cole em Settings → IA → Conhecimento):')
+    console.log('     ' + preset.knowledgeSeed.replace(/\n/g, '\n     '))
+  }
   console.log('')
 }
 

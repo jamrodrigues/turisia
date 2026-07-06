@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { createClient } from "@/lib/supabase/client";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
+import { AccountBlocked } from "@/components/billing/account-blocked";
 
 // Plumbing routes an agent/viewer (the managed-SaaS client) must not
 // reach even by typing the URL. Real enforcement is RLS + route
@@ -40,6 +42,35 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
     }
   }, [user, loading, router]);
 
+  // Billing gate — block the whole app when the subscription is a
+  // hard-stop state (suspended/canceled) or the trial lapsed. Uses the
+  // secrets-free account_billing_status() RPC (migration 036).
+  const [billingBlock, setBillingBlock] = useState<
+    "suspended" | "canceled" | "trial_ended" | null
+  >(null);
+  useEffect(() => {
+    if (loading || !user) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await createClient().rpc("account_billing_status");
+      const row = Array.isArray(data) ? data[0] : data;
+      if (cancelled || !row || row.allowed) {
+        if (!cancelled) setBillingBlock(null);
+        return;
+      }
+      const reason =
+        row.status === "canceled"
+          ? "canceled"
+          : row.status === "trialing"
+            ? "trial_ended"
+            : "suspended";
+      setBillingBlock(reason);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, user]);
+
   // Bounce agent/viewer off plumbing routes (URL-typed or bookmarked).
   useEffect(() => {
     if (loading || profileLoading || !user) return;
@@ -62,6 +93,8 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) return null;
+
+  if (billingBlock) return <AccountBlocked reason={billingBlock} />;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

@@ -28,6 +28,10 @@ import {
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 import { t } from "@/lib/i18n/pt-br";
+import { getBrand } from "@/lib/brand";
+
+// White-label (env, per deploy). Module-scope: brand doesn't change at runtime.
+const brand = getBrand();
 
 // Per-role chip metadata used in the sidebar's account strip + the
 // Members tab roster. Keeping this near both consumers in a single
@@ -203,17 +207,26 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
-            </div>
+            {brand.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={brand.logoUrl}
+                alt={brand.name}
+                className="h-8 w-8 rounded-lg object-contain"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <MessageSquare className="h-4 w-4" />
+              </div>
+            )}
             <span className="text-sm font-semibold text-foreground">
-              CRM WhatsApp
+              {brand.name}
             </span>
           </Link>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close menu"
+            aria-label="Fechar menu"
             className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
           >
             <X className="h-5 w-5" />

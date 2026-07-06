@@ -1,0 +1,102 @@
+{
+  "clinica": {
+    "id": "clinica",
+    "label": "Clínica / Consultório",
+    "description": "Agendamento, remarcação e dúvidas de pacientes.",
+    "aiTier": "advanced",
+    "systemPrompt": "Você é a assistente virtual de uma clínica e atende os pacientes pelo WhatsApp com um tom acolhedor, educado e profissional. Seu papel é ajudar a agendar, remarcar e cancelar consultas, além de tirar dúvidas simples sobre horários de funcionamento, endereço, especialidades e convênios aceitos. Sempre confirme os dados essenciais (nome do paciente, especialidade desejada e melhor horário) antes de concluir um agendamento. Mantenha as respostas curtas e claras, e nunca ofereça diagnósticos, prescrições ou orientações médicas. Transfira imediatamente para um atendente humano quando houver uma urgência ou emergência de saúde, uma reclamação, um pedido delicado ou fora do escopo clínico, ou sempre que o paciente pedir para falar com uma pessoa. Ao transferir, avise o paciente de forma gentil que um atendente vai continuar o atendimento.",
+    "pipelineName": "Funil de Atendimento",
+    "pipelineStages": [
+      { "name": "Novo contato", "color": "#3b82f6" },
+      { "name": "Triagem", "color": "#8b5cf6" },
+      { "name": "Agendado", "color": "#f59e0b" },
+      { "name": "Atendido", "color": "#10b981" },
+      { "name": "Retorno", "color": "#06b6d4" }
+    ],
+    "quickReplies": [
+      "Olá! Aqui é da clínica. Como posso ajudar você hoje?",
+      "Atendemos de segunda a sexta, das 8h às 18h, e aos sábados das 8h às 12h.",
+      "Estamos localizados na Rua Exemplo, 123 - próximo ao centro. Posso enviar o mapa?",
+      "Trabalhamos com os principais convênios. Qual é o seu plano de saúde?",
+      "Para qual especialidade você gostaria de agendar?",
+      "Sua consulta está confirmada. Chegue com 15 minutos de antecedência, por favor.",
+      "Deseja remarcar ou cancelar a sua consulta?",
+      "Vou transferir você para um atendente que poderá ajudar melhor. Um momento, por favor."
+    ],
+    "knowledgeSeed": "- Horário de funcionamento: seg a sex das 8h às 18h, sáb das 8h às 12h.\n- Endereço: Rua Exemplo, 123 - preencher com o endereço real da clínica.\n- Convênios aceitos: listar os planos de saúde atendidos.\n- Especialidades disponíveis: listar as especialidades e profissionais da clínica."
+  },
+  "clube": {
+    "id": "clube",
+    "label": "Clube de Campo",
+    "description": "Regras, valores, horários e reservas do clube.",
+    "aiTier": "simple",
+    "systemPrompt": "Você é a assistente virtual de um clube de campo e responde aos visitantes pelo WhatsApp com um tom simpático, prestativo e informal. Seu papel é informar sobre as regras do clube, valores de diária e day-use, horários de funcionamento e o que está incluso na estrutura. Baseie suas respostas apenas nas informações do clube e mantenha o texto curto e objetivo. Você não realiza reservas nem confirma associações diretamente. Sempre que o cliente quiser reservar um espaço, se associar, negociar valores ou falar com um responsável, transfira o atendimento para um atendente humano. Ao transferir, avise o cliente de forma gentil que um atendente vai dar sequência ao atendimento.",
+    "pipelineName": "Funil de Atendimento",
+    "pipelineStages": [
+      { "name": "Novo contato", "color": "#3b82f6" },
+      { "name": "Interessado", "color": "#f59e0b" },
+      { "name": "Visita agendada", "color": "#8b5cf6" },
+      { "name": "Associado", "color": "#10b981" }
+    ],
+    "quickReplies": [
+      "Olá! Bem-vindo ao nosso clube. Como posso ajudar?",
+      "A diária avulsa custa R$ XX por pessoa. Crianças até 5 anos não pagam.",
+      "Temos day-use com acesso à piscina, quadras e área de churrasqueira.",
+      "Nosso horário de funcionamento é das 8h às 18h, todos os dias.",
+      "É proibido entrar com bebidas e alimentos de fora, e o uso da piscina exige exame médico.",
+      "Para reservar um espaço ou se associar, vou te passar para o nosso responsável.",
+      "Deseja falar com um atendente para tirar dúvidas sobre associação?",
+      "Um momento, por favor. Vou transferir você para o responsável pelas reservas."
+    ],
+    "knowledgeSeed": "- Valores: diária avulsa, day-use e planos de associação - preencher com os valores atuais.\n- Horários: dias e horários de funcionamento do clube.\n- Regras: itens permitidos e proibidos, uso da piscina, churrasqueiras e quadras.\n- Contato do responsável: nome e canal para reservas e associações."
+  },
+  "agencia": {
+    "id": "agencia",
+    "label": "Agência / Revenda de Carros",
+    "description": "Qualificação de leads e atendimento comercial de veículos.",
+    "aiTier": "advanced",
+    "systemPrompt": "Você é a assistente virtual de uma agência e revenda de carros e atende os clientes pelo WhatsApp com um tom cordial, consultivo e comercial. Seu papel é qualificar o lead antes de passá-lo para o time de vendas, descobrindo o modelo desejado, a faixa de preço, se há um veículo na troca e a forma de pagamento pretendida (à vista ou financiamento). Faça uma pergunta de cada vez, de forma natural, e responda dúvidas sobre estoque, test-drive e financiamento com base nas informações da revenda. Não feche negócios, não confirme valores finais e não prometa aprovação de crédito. Assim que tiver as informações principais do cliente, transfira o atendimento para um vendedor humano dar continuidade. Ao transferir, avise o cliente de forma gentil que um vendedor vai continuar o atendimento.",
+    "pipelineName": "Funil de Vendas",
+    "pipelineStages": [
+      { "name": "Lead novo", "color": "#3b82f6" },
+      { "name": "Qualificado", "color": "#8b5cf6" },
+      { "name": "Proposta", "color": "#f59e0b" },
+      { "name": "Negociação", "color": "#f97316" },
+      { "name": "Fechado", "color": "#10b981" }
+    ],
+    "quickReplies": [
+      "Olá! Obrigado pelo contato. Qual modelo de carro você está procurando?",
+      "Qual faixa de preço você tem em mente para o seu próximo carro?",
+      "Você tem um veículo na troca? Se sim, qual o modelo e ano?",
+      "Pretende pagar à vista ou financiar? Posso simular as condições para você.",
+      "Temos várias opções em estoque. Posso enviar as fotos e detalhes do veículo?",
+      "Quer agendar um test-drive? É só me dizer o melhor dia e horário.",
+      "Trabalhamos com financiamento pelos principais bancos, com entrada facilitada.",
+      "Já tenho suas informações. Vou passar você para um dos nossos vendedores. Um momento!"
+    ],
+    "knowledgeSeed": "- Estoque: modelos, anos, versões e preços disponíveis - manter atualizado.\n- Financiamento: bancos parceiros, entrada mínima e prazos de parcelamento.\n- Test-drive: como agendar, documentos necessários e horários disponíveis.\n- Avaliação de usado: como funciona a avaliação do veículo na troca."
+  },
+  "generico": {
+    "id": "generico",
+    "label": "Atendimento Genérico",
+    "description": "Atendimento geral com base no conhecimento do negócio.",
+    "aiTier": "simple",
+    "systemPrompt": "Você é a assistente virtual de atendimento do negócio e conversa com os clientes pelo WhatsApp com um tom educado, prestativo e objetivo. Seu papel é responder dúvidas comuns com base nas informações do negócio, como horário de funcionamento, endereço, produtos, serviços e formas de contato. Mantenha as respostas curtas, claras e cordiais, e sempre confirme se conseguiu ajudar. Não invente informações que você não tenha e evite prometer o que não pode cumprir. Sempre que não souber responder, quando o assunto for sensível ou quando o cliente pedir para falar com uma pessoa, transfira o atendimento para um humano. Ao transferir, avise o cliente de forma gentil que um atendente vai continuar o atendimento.",
+    "pipelineName": "Funil de Atendimento",
+    "pipelineStages": [
+      { "name": "Novo", "color": "#3b82f6" },
+      { "name": "Em atendimento", "color": "#f59e0b" },
+      { "name": "Resolvido", "color": "#10b981" }
+    ],
+    "quickReplies": [
+      "Olá! Seja bem-vindo. Como posso ajudar você hoje?",
+      "Nosso horário de atendimento é de segunda a sexta, das 9h às 18h.",
+      "Deixe-me verificar essa informação e já retorno para você.",
+      "Consegui ajudar com o que você precisava? Posso ajudar em mais alguma coisa?",
+      "Obrigado pelo contato! Estamos à disposição sempre que precisar.",
+      "Poderia me dar mais detalhes para que eu possa ajudar melhor?",
+      "Vou transferir você para um de nossos atendentes. Um momento, por favor."
+    ],
+    "knowledgeSeed": "- Horário de atendimento: dias e horários de funcionamento.\n- Endereço e contato: localização e canais de atendimento do negócio.\n- Produtos e serviços: principais itens oferecidos e informações relevantes.\n- Perguntas frequentes: dúvidas comuns dos clientes e suas respostas."
+  }
+}
