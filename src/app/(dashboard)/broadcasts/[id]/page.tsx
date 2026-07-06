@@ -294,7 +294,11 @@ export default function BroadcastDetailPage() {
               </span>
             </div>
             <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
-              <span>Modelo: {broadcast.template_name}</span>
+              <span>
+                {broadcast.template_name
+                  ? `Modelo: ${broadcast.template_name}`
+                  : 'Texto livre'}
+              </span>
               <span>-</span>
               <span>
                 Criado em {new Date(broadcast.created_at).toLocaleDateString()}

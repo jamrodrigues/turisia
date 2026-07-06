@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Radio, Plus, Loader2 } from 'lucide-react';
+import { Radio, Plus, Loader2, Send } from 'lucide-react';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { getBroadcastStatus } from '@/lib/broadcast-status';
@@ -184,15 +184,26 @@ export default function BroadcastsPage() {
             Envie mensagens em massa para seus contatos usando modelos aprovados.
           </p>
         </div>
-        <GatedButton
-          canAct={canCreate}
-          gateReason="criar disparos"
-          onClick={() => router.push('/broadcasts/new')}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          Novo disparo
-        </GatedButton>
+        <div className="flex items-center gap-2">
+          <GatedButton
+            canAct={canCreate}
+            gateReason="criar disparos"
+            onClick={() => router.push('/broadcasts/simple')}
+            className="border border-border bg-transparent text-foreground hover:bg-muted"
+          >
+            <Send className="h-4 w-4" />
+            Envio simples
+          </GatedButton>
+          <GatedButton
+            canAct={canCreate}
+            gateReason="criar disparos"
+            onClick={() => router.push('/broadcasts/new')}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" />
+            Novo disparo
+          </GatedButton>
+        </div>
       </div>
 
       {broadcasts.length === 0 ? (

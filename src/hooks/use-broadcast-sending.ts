@@ -48,8 +48,21 @@ interface BroadcastPayload {
   headerMediaUrl?: string;
 }
 
+/**
+ * Free-text broadcast (kind='text') — a plain message sent to every
+ * recipient with no Meta template. This is the ONLY broadcast an
+ * uazapi account can send (uazapi has no template registry); on Meta it
+ * reaches recipients inside the 24h window.
+ */
+interface TextBroadcastPayload {
+  name: string;
+  message: string;
+  audience: AudienceConfig;
+}
+
 interface UseBroadcastSendingReturn {
   createAndSendBroadcast: (payload: BroadcastPayload) => Promise<string>;
+  createAndSendTextBroadcast: (payload: TextBroadcastPayload) => Promise<string>;
   isProcessing: boolean;
   progress: number;
 }
@@ -571,5 +584,185 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     }
   }
 
-  return { createAndSendBroadcast, isProcessing, progress };
+  /**
+   * Free-text sibling of createAndSendBroadcast. Reuses the same
+   * audience resolver + recipient/aggregate machinery, but persists a
+   * kind='text' broadcast and posts `message_text` (no template) to the
+   * send route, which dispatches per provider (uazapi throttled
+   * server-side). Kept deliberately simple — no per-recipient variables
+   * or media, which are Meta-template concepts.
+   */
+  async function createAndSendTextBroadcast(
+    payload: TextBroadcastPayload,
+  ): Promise<string> {
+    setIsProcessing(true);
+    setProgress(0);
+
+    const supabase = createClient();
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) throw new Error('You are not signed in.');
+      if (!accountId) throw new Error('Your profile is not linked to an account.');
+
+      const message = payload.message.trim();
+      if (!message) throw new Error('A mensagem não pode estar vazia.');
+
+      setProgress(5);
+      const contacts = await resolveAudience(payload.audience);
+      if (contacts.length === 0) {
+        throw new Error('No contacts found for this audience.');
+      }
+
+      setProgress(10);
+      const { data: broadcast, error: broadcastError } = await supabase
+        .from('broadcasts')
+        .insert({
+          user_id: user.id,
+          account_id: accountId,
+          name: payload.name,
+          kind: 'text',
+          message_body: message,
+          audience_filter: {
+            type: payload.audience.type,
+            tagIds: payload.audience.tagIds,
+            customField: payload.audience.customField,
+            excludeTagIds: payload.audience.excludeTagIds,
+          },
+          status: 'sending',
+          total_recipients: contacts.length,
+        })
+        .select()
+        .single();
+      if (broadcastError || !broadcast) {
+        throw new Error(
+          `Failed to create broadcast: ${broadcastError?.message ?? 'unknown error'}`,
+        );
+      }
+
+      setProgress(20);
+      const recipientRows = contacts.map((contact) => ({
+        broadcast_id: broadcast.id,
+        contact_id: contact.id,
+        status: 'pending' as const,
+      }));
+      for (let i = 0; i < recipientRows.length; i += INSERT_BATCH_SIZE) {
+        const batch = recipientRows.slice(i, i + INSERT_BATCH_SIZE);
+        const { error: recipientError } = await supabase
+          .from('broadcast_recipients')
+          .insert(batch);
+        if (recipientError) {
+          await supabase
+            .from('broadcasts')
+            .update({ status: 'failed', failed_count: contacts.length })
+            .eq('id', broadcast.id);
+          throw new Error(
+            `Failed to insert recipient batch ${i / INSERT_BATCH_SIZE + 1}: ${recipientError.message}`,
+          );
+        }
+      }
+
+      setProgress(30);
+      const { data: recipients, error: recipientsFetchError } = await supabase
+        .from('broadcast_recipients')
+        .select('*, contact:contacts(*)')
+        .eq('broadcast_id', broadcast.id);
+      if (recipientsFetchError || !recipients) {
+        throw new Error('Failed to fetch broadcast recipients');
+      }
+
+      let failedCount = 0;
+      const totalRecipients = recipients.length;
+
+      for (let i = 0; i < recipients.length; i += SEND_BATCH_SIZE) {
+        const batch = recipients.slice(i, i + SEND_BATCH_SIZE);
+        const apiRecipients = batch
+          .filter((r) => r.contact?.phone)
+          .map((r) => ({ phone: r.contact!.phone as string }));
+
+        if (apiRecipients.length === 0) continue;
+
+        try {
+          const res = await fetch('/api/whatsapp/broadcast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              recipients: apiRecipients,
+              message_text: message,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Broadcast API request failed');
+
+          const resultsByPhone = new Map<string, BroadcastApiResult>();
+          for (const r of (data.results ?? []) as BroadcastApiResult[]) {
+            resultsByPhone.set(r.phone, r);
+          }
+
+          for (const recipient of batch) {
+            const phone = recipient.contact?.phone;
+            const result = phone ? resultsByPhone.get(phone) : undefined;
+            if (!result || result.status !== 'sent') {
+              failedCount++;
+              await supabase
+                .from('broadcast_recipients')
+                .update({
+                  status: 'failed',
+                  error_message: result?.error ?? 'No phone number on contact',
+                })
+                .eq('id', recipient.id);
+            } else {
+              await supabase
+                .from('broadcast_recipients')
+                .update({
+                  status: 'sent',
+                  sent_at: new Date().toISOString(),
+                  whatsapp_message_id: result.whatsapp_message_id ?? null,
+                  error_message: null,
+                })
+                .eq('id', recipient.id);
+            }
+          }
+        } catch (err) {
+          for (const recipient of batch) {
+            failedCount++;
+            await supabase
+              .from('broadcast_recipients')
+              .update({
+                status: 'failed',
+                error_message: err instanceof Error ? err.message : 'Unknown error',
+              })
+              .eq('id', recipient.id);
+          }
+        }
+
+        setProgress(30 + Math.round(((i + batch.length) / totalRecipients) * 60));
+        if (i + SEND_BATCH_SIZE < recipients.length) {
+          await sleep(SEND_BATCH_DELAY_MS);
+        }
+      }
+
+      setProgress(95);
+      const finalStatus = failedCount === totalRecipients ? 'failed' : 'sent';
+      await supabase
+        .from('broadcasts')
+        .update({ status: finalStatus })
+        .eq('id', broadcast.id);
+
+      setProgress(100);
+      return broadcast.id;
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  return {
+    createAndSendBroadcast,
+    createAndSendTextBroadcast,
+    isProcessing,
+    progress,
+  };
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { providerOf, providerSendText } from '@/lib/whatsapp/sender'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 import {
@@ -21,6 +22,77 @@ interface BroadcastResult {
   status: 'sent' | 'failed'
   whatsapp_message_id?: string
   error?: string
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Per-send pause for the uazapi provider. uazapi drives an unofficial
+ * (personal) WhatsApp number, which WhatsApp bans far more aggressively
+ * for bursty sending than the official Cloud API. Meta needs no extra
+ * per-send pause here (the dashboard hook already batches Meta sends
+ * 10-at-a-time with a 1s gap).
+ */
+const UAZAPI_SEND_DELAY_MS = 700
+
+/**
+ * Free-text broadcast (kind='text'): one plain text message per
+ * recipient via the provider dispatcher. Works on uazapi (anytime) and
+ * Meta (inside the 24h window; out-of-window recipients fail
+ * individually, as Meta requires a template there). Phone-variant retry
+ * mirrors the template path; uazapi sends are throttled.
+ */
+async function sendFreeTextBroadcast(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  config: any,
+  recipients: { phone: string }[],
+  text: string,
+): Promise<{ results: BroadcastResult[]; sent: number; failed: number }> {
+  const isUazapi = providerOf(config) === 'uazapi'
+  const results: BroadcastResult[] = []
+  let sent = 0
+  let failed = 0
+
+  for (let i = 0; i < recipients.length; i++) {
+    const raw = recipients[i].phone
+    const sanitized = sanitizePhoneForMeta(raw)
+    if (!isValidE164(sanitized)) {
+      results.push({ phone: raw, status: 'failed', error: 'Invalid phone number format' })
+      failed++
+      continue
+    }
+
+    const variants = phoneVariants(sanitized)
+    let sentMessageId: string | null = null
+    let lastError: string | null = null
+    for (const variant of variants) {
+      try {
+        const r = await providerSendText({ config, to: variant, text })
+        sentMessageId = r.messageId
+        lastError = null
+        break
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error'
+        lastError = msg
+        if (!isRecipientNotAllowedError(msg)) break
+      }
+    }
+
+    if (sentMessageId) {
+      results.push({ phone: raw, status: 'sent', whatsapp_message_id: sentMessageId })
+      sent++
+    } else {
+      console.error(`Failed to send free-text broadcast to ${raw}:`, lastError)
+      results.push({ phone: raw, status: 'failed', error: lastError || 'Unknown error' })
+      failed++
+    }
+
+    if (isUazapi && i < recipients.length - 1) {
+      await sleep(UAZAPI_SEND_DELAY_MS)
+    }
+  }
+
+  return { results, sent, failed }
 }
 
 /**
@@ -103,7 +175,13 @@ export async function POST(request: Request) {
       template_name,
       template_language,
       template_params,
+      message_text,
     } = body
+
+    // Free-text mode when a non-empty message_text is supplied; else it's
+    // a Meta-template broadcast (the default / legacy behavior).
+    const freeText = typeof message_text === 'string' ? message_text.trim() : ''
+    const isFreeText = freeText.length > 0
 
     // Normalize to a list of {phone, params} regardless of shape.
     let recipients: NewRecipient[]
@@ -127,9 +205,9 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!template_name) {
+    if (!isFreeText && !template_name) {
       return NextResponse.json(
-        { error: 'template_name is required' },
+        { error: 'template_name or message_text is required' },
         { status: 400 }
       )
     }
@@ -150,6 +228,35 @@ export async function POST(request: Request) {
       )
     }
 
+    // Templates are Meta-only; uazapi has no template registry. A uazapi
+    // account must use free text.
+    if (!isFreeText && providerOf(config) === 'uazapi') {
+      return NextResponse.json(
+        {
+          error:
+            'Message templates are Meta-only. This account uses uazapi — send a free-text broadcast instead.',
+        },
+        { status: 400 }
+      )
+    }
+
+    // ---- Free-text broadcast ----
+    if (isFreeText) {
+      const { results, sent, failed } = await sendFreeTextBroadcast(
+        config,
+        recipients,
+        freeText,
+      )
+      return NextResponse.json({
+        success: true,
+        total: recipients.length,
+        sent,
+        failed,
+        results,
+      })
+    }
+
+    // ---- Meta-template broadcast (below) ----
     const accessToken = decrypt(config.access_token)
 
     // Load the template row once so sendTemplateMessage can build

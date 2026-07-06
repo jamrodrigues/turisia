@@ -9,6 +9,7 @@ import {
 } from '@/lib/whatsapp/process-inbound'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { storeInboundMediaToBucket } from '@/lib/whatsapp/store-inbound-media'
 
 /**
  * uazapi inbound webhook.
@@ -145,9 +146,11 @@ async function processEvent(event: NormalizedEvent, config: ConfigRow) {
   try {
     // Media arrives as an encrypted WhatsApp CDN URL — worthless. Ask
     // the uazapi server for the decrypted, hosted file (confirmed:
-    // POST /message/download → { fileURL }). Best-effort: on failure
-    // the message still lands, with a readable placeholder.
-    // TODO(fase-01 §1.7.3): re-upload to Supabase Storage long-term.
+    // POST /message/download → { fileURL }). That URL lives on the uazapi
+    // server and is ephemeral, so we immediately re-upload the bytes to
+    // our own `chat-media` bucket (fase-01 §1.7.3) — durable + served
+    // from Supabase. Best-effort at every step: on failure the message
+    // still lands (with the provider URL, or a readable placeholder).
     let mediaUrl: string | null = null
     let contentText = event.text
     if (event.hasMedia && event.waMessageId) {
@@ -159,7 +162,15 @@ async function processEvent(event: NormalizedEvent, config: ConfigRow) {
           },
           { messageId: event.waMessageId },
         )
-        mediaUrl = dl.fileUrl
+        const stored = await storeInboundMediaToBucket(
+          supabaseAdmin(),
+          config.account_id,
+          dl.fileUrl,
+          dl.mimetype,
+        )
+        // Prefer our durable copy; fall back to the provider URL if the
+        // re-upload failed for any reason.
+        mediaUrl = stored ?? dl.fileUrl
       } catch (err) {
         console.warn(
           '[uazapi webhook] media download failed:',
