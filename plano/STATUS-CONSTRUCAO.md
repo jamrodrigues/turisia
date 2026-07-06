@@ -19,10 +19,10 @@ Branch: `feat/uazapi-provider` · base: wacrm 0.7.0 (`upstream/main`) · Supabas
 | 01 Adapter uazapi | ✅ | Recebe/envia real validado (texto/imagem/áudio/handoff). Pendências: mídia→Storage, broadcast texto-livre, guarda 24h |
 | 02 IA+handoff+n8n | ✅ código | E2E com chave OpenAI real / fluxo n8n real ainda não exercitado |
 | 03 Papéis | ✅ | Falta teste E2E de acesso negado |
-| 03b pt-BR | ✅ cliente | Admin (settings/automations/flows/broadcasts/dashboard) ainda em inglês; e-mails Auth por projeto |
+| 03b pt-BR | ✅ COMPLETO | Todas as telas (cliente + admin) traduzidas; falta só e-mails Auth (por projeto, no onboarding) |
 | 04 Provisionamento | ✅ | Script não roda criação de projeto Supabase (Management API — manual) |
-| 05 Onboarding | ⛔ depende do usuário | Precisa: clientes reais, números WhatsApp, fluxos n8n, domínios |
-| 06 Comercial | ⛔ depende do usuário | Precisa: decisão de cobrança (Stripe?), logos, domínios |
+| 05 Onboarding | ✅ base modular | Presets de verticais + `--vertical` no script. Onboarding dos clientes REAIS depende do usuário (números/n8n/domínios) |
+| 06 Comercial | ✅ base | White-label (env), trava de cobrança, webhook billing genérico, docs. Conectar Stripe real depende do usuário |
 
 ## Portões de qualidade (estado atual)
 - `npm run typecheck` ✅ · `npm run build` ✅ · `npm run test` → 637 ok / **5 falhas pré-existentes** (locale da máquina: `currency.test.ts` + `date-utils.test.ts` — não são regressão, existem no upstream nesta máquina).
@@ -35,8 +35,9 @@ Branch: `feat/uazapi-provider` · base: wacrm 0.7.0 (`upstream/main`) · Supabas
 4. **Transcrição** exige chave OpenAI (Whisper); contas advanced sem chave dependem do n8n transcrever.
 5. **Debounce** usa `setTimeout` dentro de `after()` (ok no maxDuration=60); avaliar fila externa se escalar.
 6. **Notificação de handoff** (tabela `notifications`) não dispara — só o flag `ai_autoreply_disabled` + badge no inbox. `notifications.type` tem CHECK só `conversation_assigned` (precisaria migration p/ novo tipo).
-7. **Tradução admin** (settings/automations/flows/broadcasts/dashboard) pendente.
-8. **Teste E2E** do tier avançado (n8n) e do handoff real.
+7. **Tradução** — 100% das telas em pt-BR; falta só traduzir os templates de e-mail do Supabase Auth (por projeto, no painel — passo do onboarding).
+8. **Teste E2E** do tier avançado (n8n), handoff real, e da trava de cobrança.
+9. **Fase 05/06 código** presente (verticais, white-label, billing gate/webhook) mas não exercitado com cliente/processador real.
 
 ## Como validar localmente
 - Supabase + uazapi já conectados (ver memória do projeto / `.env.local`).
