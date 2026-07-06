@@ -50,6 +50,14 @@ export async function dispatchInboundToBrain(args: DispatchArgs): Promise<void> 
       .maybeSingle()
     if (!conv || !isBotEligible(conv, tier.autoReplyMaxPerConversation)) return
 
+    // The `auto_reply_enabled` toggle is the intended off-switch for the
+    // bot while keeping is_active/tier untouched. The simple tier honors
+    // it inside auto-reply.ts; the advanced (n8n) tier does not, so
+    // enforce it here for BOTH tiers — no reply of any tier goes out
+    // when the admin has switched auto-reply off. (Skips the debounce
+    // sleep + transcription cost too: bot off ⇒ no bot work.)
+    if (!tier.autoReplyEnabled) return
+
     // ----- Debounce (last-message-wins) -----
     // Every eligible inbound bumps ai_debounce_until to now()+N and
     // sleeps N. After waking, the message whose stamp is still the
@@ -58,10 +66,20 @@ export async function dispatchInboundToBrain(args: DispatchArgs): Promise<void> 
     // reply); earlier messages see a later stamp and stand down.
     if (DEBOUNCE_MS > 0) {
       const myStamp = Date.now() + DEBOUNCE_MS
+      const myStampIso = new Date(myStamp).toISOString()
+      // Monotonic bump: advance the stamp, never move it backwards.
+      // Two near-simultaneous inbounds otherwise race — the EARLIER
+      // one's smaller stamp could land LAST and overwrite the later
+      // one's, after which both pass the `current > myStamp` test below
+      // and the brain runs twice (two n8n calls / two LLM replies). A
+      // conditional UPDATE (write only where the stored stamp is null or
+      // older) is one atomic statement, so the row always ends up holding
+      // the MAX stamp regardless of write order → exactly one winner.
       await db
         .from('conversations')
-        .update({ ai_debounce_until: new Date(myStamp).toISOString() })
+        .update({ ai_debounce_until: myStampIso })
         .eq('id', conversationId)
+        .or(`ai_debounce_until.is.null,ai_debounce_until.lt.${myStampIso}`)
 
       await sleep(DEBOUNCE_MS)
 

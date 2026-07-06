@@ -149,16 +149,29 @@ export async function POST(request: Request) {
 
     const webhookSecret = crypto.randomBytes(24).toString('hex')
 
-    const row = {
+    const { data: existing } = await supabaseAdmin()
+      .from('whatsapp_config')
+      .select('id, provider, access_token, phone_number_id')
+      .eq('account_id', accountId)
+      .maybeSingle()
+
+    // Preserve a pre-existing Meta connection. uazapi shares this row and
+    // must not clobber the account's real Meta access_token /
+    // phone_number_id — otherwise removing uazapi later leaves the Meta
+    // path decrypting a placeholder token and posting to a synthetic
+    // phone_number_id (client must re-enter Meta creds to recover).
+    // A row with provider='meta' AND an access_token holds real Meta
+    // creds (placeholders are only ever written under provider='uazapi').
+    // When present we leave phone_number_id + access_token untouched; the
+    // uazapi webhook/sender resolve by instance_name + provider, so the
+    // dormant Meta values are inert while uazapi is active.
+    const hasMetaCreds =
+      !!existing && existing.provider === 'meta' && !!existing.access_token
+
+    const row: Record<string, unknown> = {
       account_id: accountId,
       user_id: userId,
       provider: 'uazapi',
-      // Synthetic, stable, unique — satisfies the NOT NULL + UNIQUE
-      // constraints from migrations 001/013 (see 031's header comment).
-      phone_number_id: `uazapi:${instance_name}`,
-      // access_token is NOT NULL; store an encrypted placeholder the
-      // Meta path can never mistake for a real token.
-      access_token: encrypt('uazapi-placeholder'),
       uazapi_base_url: base_url,
       uazapi_instance_name: instance_name,
       uazapi_instance_token: encrypt(instance_token),
@@ -167,12 +180,14 @@ export async function POST(request: Request) {
       connected_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
-
-    const { data: existing } = await supabaseAdmin()
-      .from('whatsapp_config')
-      .select('id')
-      .eq('account_id', accountId)
-      .maybeSingle()
+    if (!hasMetaCreds) {
+      // No Meta creds to protect (fresh account or already on uazapi):
+      // seed the synthetic, stable, unique phone_number_id + an encrypted
+      // placeholder to satisfy the NOT NULL + UNIQUE constraints
+      // (migrations 001/013; see 031's header comment).
+      row.phone_number_id = `uazapi:${instance_name}`
+      row.access_token = encrypt('uazapi-placeholder')
+    }
 
     const query = existing
       ? supabaseAdmin().from('whatsapp_config').update(row).eq('id', existing.id)
@@ -216,6 +231,12 @@ export async function DELETE() {
   try {
     const { accountId } = await requireRole('admin')
 
+    // Flip back to Meta and clear the uazapi fields. access_token /
+    // phone_number_id are intentionally left untouched: POST preserved
+    // any real Meta creds, so this restores a working Meta connection
+    // automatically. An account that was uazapi-only keeps its
+    // placeholder token (there is no Meta config to restore) and stays
+    // 'disconnected' until the admin enters Meta creds.
     const { error } = await supabaseAdmin()
       .from('whatsapp_config')
       .update({

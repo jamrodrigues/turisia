@@ -413,7 +413,10 @@ export async function sendMessageToConversation(
       content_text: contentText || null,
       media_url: mediaUrl || null,
       template_name: templateName || null,
-      message_id: waMessageId,
+      // NULL, not '' — a uazapi send can return an empty id and 034's
+      // partial unique index on (conversation_id, message_id) treats ''
+      // as indexed, so a second empty-id send would collide.
+      message_id: waMessageId || null,
       status: 'sent',
       reply_to_message_id: replyToMessageId || null,
     })

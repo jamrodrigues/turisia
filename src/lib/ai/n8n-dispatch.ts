@@ -41,6 +41,22 @@ export async function dispatchInboundToN8n(
 
     const db = supabaseAdmin()
 
+    // Stand down if the account has an active message-level automation
+    // (new_message_received / keyword_match). process-inbound dispatches
+    // those for the SAME inbound and they may send their own reply, so
+    // the bot must not also fire or the customer gets two replies. This
+    // mirrors the guard in auto-reply.ts (simple tier); the advanced
+    // (n8n) path dropped it. Relationship triggers (first_inbound_message,
+    // new_contact_created) don't count — they're not per-message auto-responders.
+    const { data: autoResponders } = await db
+      .from('automations')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('is_active', true)
+      .in('trigger_type', ['new_message_received', 'keyword_match'])
+      .limit(1)
+    if (autoResponders && autoResponders.length > 0) return
+
     const { data: conv, error: convErr } = await db
       .from('conversations')
       .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')

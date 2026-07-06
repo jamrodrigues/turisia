@@ -123,6 +123,20 @@ export async function createBroadcast(
       400
     );
   }
+
+  // Broadcasts are template sends, and templates are a Meta-only concept.
+  // uazapi rows carry a placeholder access_token + synthetic
+  // phone_number_id — decrypting and blasting Meta with them 401s every
+  // recipient. Fail fast with a clear error instead. (Free-form uazapi
+  // broadcast is separate, unbuilt work — see STATUS pendência #2.)
+  if (config.provider === 'uazapi') {
+    throw new BroadcastError(
+      'broadcast_unsupported_provider',
+      'Template broadcasts are Meta-only. This account uses uazapi, which has no template registry.',
+      400
+    );
+  }
+
   const accessToken = decrypt(config.access_token);
 
   // Template row (once) for header/button components; guard a

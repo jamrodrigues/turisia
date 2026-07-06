@@ -109,6 +109,16 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+  /**
+   * Does the Meta 24h customer-service window apply to this account?
+   * True for Meta (free-form text/media are blocked once >24h since the
+   * last customer message, forcing a template). uazapi has NO such
+   * window and no templates — passing false keeps free text always
+   * enabled so uazapi agents aren't dead-ended into a template picker
+   * that can't send. Defaults to true (Meta) so existing callers keep
+   * their behavior.
+   */
+  sessionWindowApplies?: boolean;
 }
 
 function formatDateSeparator(dateStr: string): string {
@@ -167,6 +177,7 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
+  sessionWindowApplies = true,
 }: MessageThreadProps) {
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
@@ -224,6 +235,10 @@ export function MessageThread({
 
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
+    // uazapi (and any provider without Meta's 24h rule): free-form text
+    // is always allowed, so the window never expires and no template is
+    // ever forced.
+    if (!sessionWindowApplies) return { expired: false, remaining: "" };
     if (!messages.length) return { expired: false, remaining: "" };
 
     // Find last customer message
@@ -247,7 +262,7 @@ export function MessageThread({
         : `${Math.floor(hoursLeft * 60)}min restantes`;
 
     return { expired, remaining };
-  }, [messages]);
+  }, [messages, sessionWindowApplies]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause

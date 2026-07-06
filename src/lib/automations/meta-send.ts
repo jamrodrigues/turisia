@@ -161,7 +161,9 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     content_type,
     content_text,
     template_name,
-    message_id: waMessageId,
+    // NULL, not '' — uazapi may return an empty id; 034's partial unique
+    // index on (conversation_id, message_id) would collide on a second ''.
+    message_id: waMessageId || null,
     status: 'sent',
   })
   if (msgErr) {

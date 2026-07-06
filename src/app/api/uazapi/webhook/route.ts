@@ -113,6 +113,34 @@ type NormalizedEvent = ReturnType<typeof normalizeUazapiWebhook>
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ConfigRow = any
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Has this provider message_id already been persisted in the
+ * conversation? Polls a few times (total ~3s) so a fromMe echo that
+ * races ahead of the CRM send path's messages INSERT still resolves to
+ * "yes, ours" instead of being misread as an external phone-side send.
+ * Runs inside after() (maxDuration 60), so the short wait is safe.
+ */
+async function isAlreadyPersisted(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  conversationId: string,
+  messageId: string,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data } = await db
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('message_id', messageId)
+      .maybeSingle()
+    if (data) return true
+    if (attempt < 3) await sleep(750)
+  }
+  return false
+}
+
 async function processEvent(event: NormalizedEvent, config: ConfigRow) {
   try {
     // Media arrives as an encrypted WhatsApp CDN URL — worthless. Ask
@@ -187,11 +215,18 @@ async function mirrorFromMe(
   const db = supabaseAdmin()
   const phone = normalizePhone(event.fromPhone)
 
+  // fromPhone is the CUSTOMER (the chat jid), but event.pushName is the
+  // SENDER's name — for a fromMe event that's the business OWNER, not the
+  // customer. Passing it here would rename the customer contact to the
+  // owner's name (findOrCreateContact updates on any name mismatch),
+  // destroying identity data after a day of phone-side replies. The
+  // customer's real name only ever arrives on their own inbound events,
+  // so mirror with no name and let those set it.
   const contactOutcome = await findOrCreateContact(
     config.account_id,
     config.user_id,
     phone,
-    event.pushName,
+    '',
   )
   if (!contactOutcome) return
 
@@ -203,15 +238,16 @@ async function mirrorFromMe(
   if (!convResult) return
   const conversation = convResult.conversation
 
-  // Dedup: CRM-originated sends already inserted this message_id.
-  if (event.waMessageId) {
-    const { data: dupe } = await db
-      .from('messages')
-      .select('id')
-      .eq('conversation_id', conversation.id)
-      .eq('message_id', event.waMessageId)
-      .maybeSingle()
-    if (dupe) return
+  // Dedup: CRM/bot-originated sends already inserted this message_id, so
+  // this echo must be dropped (not re-inserted, not treated as a
+  // phone-side takeover). But the uazapi echo can BEAT the CRM send
+  // path's DB insert — the provider API returns fast, the messages
+  // insert is a separate roundtrip. A single point-in-time check would
+  // then miss the dupe, double the message AND wrongly mute the bot with
+  // handoff_reason='manual_phone'. Poll briefly to let that insert land
+  // before concluding this is a genuine phone-side send.
+  if (event.waMessageId && (await isAlreadyPersisted(db, conversation.id, event.waMessageId))) {
+    return
   }
 
   const { error: msgError } = await db.from('messages').insert({

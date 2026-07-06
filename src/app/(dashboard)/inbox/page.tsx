@@ -37,6 +37,10 @@ export default function InboxPage() {
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
+  // Provider drives the 24h-window rule: 'meta' enforces it, 'uazapi'
+  // has no window (free-form text always allowed). Null until the
+  // status RPC resolves; treated as Meta (window applies) meanwhile.
+  const [whatsappProvider, setWhatsappProvider] = useState<string | null>(null);
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -192,6 +196,7 @@ export default function InboxPage() {
       const { data } = await supabase.rpc("account_integration_status");
       const row = Array.isArray(data) ? data[0] : data;
       setWhatsappConnected(row?.whatsapp_connected === true);
+      setWhatsappProvider((row?.whatsapp_provider as string | null) ?? null);
     };
 
     checkConnection();
@@ -608,6 +613,7 @@ export default function InboxPage() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            sessionWindowApplies={whatsappProvider !== "uazapi"}
           />
         </div>
 

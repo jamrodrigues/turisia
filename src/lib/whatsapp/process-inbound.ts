@@ -250,9 +250,17 @@ export async function processNormalizedInbound(
   }
 
   // AI brain (tier-routed: off / simple built-in / advanced n8n) —
-  // only for plain text the flow runner did not consume. Debounces
-  // bursts and owns its try/catch.
-  if (!flowConsumed && !input.interactiveReplyId && inboundText.trim()) {
+  // for plain text the flow runner did not consume. Voice notes carry
+  // no text but MUST reach the brain: the dispatcher transcribes the
+  // latest audio in place (Whisper / n8n) before replying, so gate them
+  // in too — otherwise transcription is unreachable dead code and pure
+  // voice notes never get answered.
+  const isAudioInbound = input.contentType === 'audio'
+  if (
+    !flowConsumed &&
+    !input.interactiveReplyId &&
+    (inboundText.trim() || isAudioInbound)
+  ) {
     await dispatchInboundToBrain({
       accountId: input.accountId,
       conversationId: conversation.id,

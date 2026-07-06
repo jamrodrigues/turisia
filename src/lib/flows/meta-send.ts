@@ -125,7 +125,12 @@ export async function engineSendText(
     sender_type: 'bot',
     content_type: 'text',
     content_text: args.text,
-    message_id: waMessageId,
+    // NULL, never '' — some uazapi send responses yield an empty id, and
+    // migration 034's unique index on (conversation_id, message_id)
+    // treats '' as a real value, so a second empty-id send in the same
+    // conversation would violate it (message delivered, DB insert throws).
+    // NULLs are excluded from the partial index.
+    message_id: waMessageId || null,
     status: 'sent',
   })
   if (msgErr) {
@@ -239,7 +244,12 @@ export async function engineSendMedia(
     sender_type: 'bot',
     content_type: args.kind,
     content_text: args.caption ?? null,
-    message_id: waMessageId,
+    // NULL, never '' — some uazapi send responses yield an empty id, and
+    // migration 034's unique index on (conversation_id, message_id)
+    // treats '' as a real value, so a second empty-id send in the same
+    // conversation would violate it (message delivered, DB insert throws).
+    // NULLs are excluded from the partial index.
+    message_id: waMessageId || null,
     status: 'sent',
   })
   if (msgErr) {
@@ -411,7 +421,12 @@ async function sendInteractiveViaMeta(
     sender_type: 'bot',
     content_type: 'interactive',
     content_text: input.bodyText,
-    message_id: waMessageId,
+    // NULL, never '' — some uazapi send responses yield an empty id, and
+    // migration 034's unique index on (conversation_id, message_id)
+    // treats '' as a real value, so a second empty-id send in the same
+    // conversation would violate it (message delivered, DB insert throws).
+    // NULLs are excluded from the partial index.
+    message_id: waMessageId || null,
     status: 'sent',
   })
   if (msgErr) {
