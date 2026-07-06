@@ -1,0 +1,26 @@
+# One stack per client. Copy .env.client.template → .env.<slug>, fill it,
+# then:  docker compose --env-file .env.clinica-neuza -p crm-clinica-neuza up -d --build
+#
+# Each client gets its own container + its own Supabase project + its own
+# uazapi instance. Put a reverse proxy (Caddy/Traefik/nginx) in front to
+# terminate TLS and map the client's domain to this container's port.
+
+services:
+  crm:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
+    env_file:
+      - ${CLIENT_ENV_FILE:-.env.client}
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
