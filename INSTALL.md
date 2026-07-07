@@ -62,7 +62,7 @@ cd cliente-x
 
 1. Crie um projeto novo em <https://supabase.com/dashboard> (região mais
    próxima do cliente). Anote `Project URL` e as chaves (Settings → API).
-2. Aplique **todas** as migrations, em ordem, `001` → `038`. Elas são a
+2. Aplique **todas** as migrations, em ordem, `001` → `040`. Elas são a
    fonte de verdade em `supabase/migrations/`.
 
    **Opção A — painel (SQL Editor):** abra `Authentication → ... → SQL
@@ -70,8 +70,8 @@ cd cliente-x
    ordem numérica e rode. (Ou concatene todos num só e rode de uma vez.)
 
    **Opção B — bundle único (mais rápido no painel):** cole o arquivo
-   `deploy/setup-banco-completo-001-038.sql` inteiro no SQL Editor e rode
-   uma vez — ele já traz todas as 38 migrations em ordem.
+   `deploy/setup-banco-completo-001-040.sql` inteiro no SQL Editor e rode
+   uma vez — ele já traz todas as 40 migrations em ordem.
 
    **Opção C — Supabase CLI:**
    ```bash
@@ -79,9 +79,10 @@ cd cliente-x
    npx supabase db push
    ```
 
-   > Regenerar o bundle quando criar novas migrations:
+   > Regenerar o bundle quando criar novas migrations (ajuste o nome do
+   > arquivo de saída para a última migration):
    > ```bash
-   > node -e "const fs=require('fs'),p='supabase/migrations';let o='';for(const f of fs.readdirSync(p).filter(x=>/^\d{3}_.*\.sql$/.test(x)).sort())o+='\n-- >>> '+f+'\n\n'+fs.readFileSync(p+'/'+f,'utf8');fs.writeFileSync('deploy/setup-banco-completo-001-038.sql',o)"
+   > node -e "const fs=require('fs'),p='supabase/migrations';let o='';for(const f of fs.readdirSync(p).filter(x=>/^\d{3}_.*\.sql$/.test(x)).sort())o+='\n-- >>> '+f+'\n\n'+fs.readFileSync(p+'/'+f,'utf8');fs.writeFileSync('deploy/setup-banco-completo-001-040.sql',o)"
    > ```
 
 ### 3.3 Configurar o ambiente
@@ -166,6 +167,28 @@ equipe em Configurações → Membros.
 > A partir daqui, **respostas devem sair pelo CRM** (inbox ou bot).
 > Responder pelo celular conectado **silencia o bot** naquela conversa
 > (o CRM entende "humano assumiu"; use "voltar para o robô" para religar).
+
+#### Aquecimento do número + teto diário (anti-ban)
+
+Números **não oficiais** (uazapi) são banidos pelo WhatsApp por volume
+alto, principalmente quando novos ("frios"). Aqueça o número e limite os
+disparos em massa:
+
+| Fase | Teto diário sugerido | Disparos em massa |
+|------|----------------------|-------------------|
+| Semana 1 | 30–50/dia | Evitar; só responder |
+| Semana 2 | 80/dia | Liberar com moderação |
+| Semana 3 | 120/dia | Ok |
+| Semana 4+ | 150–200/dia | Ok |
+
+- Configure o teto em **Configurações → uazapi → "Teto diário de envios"**
+  (em branco = sem limite). Ele bloqueia um **disparo em massa** quando o
+  total do dia + o disparo passariam do teto (erro `daily_limit_exceeded`).
+- **Respostas 1 a 1** (inbox e robô) **nunca** são bloqueadas pelo teto —
+  responder quem te chamou é risco baixo; travar atendimento é pior.
+- O CRM também já humaniza o bot: mostra **"digitando…"** e espera um
+  intervalo natural antes de responder, e usa intervalos **aleatórios**
+  entre destinatários de um disparo (nunca em cadência fixa de robô).
 
 ### 3.8 Configurar a IA
 

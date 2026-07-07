@@ -32,6 +32,7 @@ import {
 } from './meta-api'
 import {
   uazapiSendMedia,
+  uazapiSendPresence,
   uazapiSendReaction,
   uazapiSendText,
   type UazapiContext,
@@ -79,14 +80,38 @@ export interface ProviderSendTextArgs {
   text: string
   /** Meta-only (swipe-reply context). Ignored on uazapi. */
   contextMessageId?: string
+  /**
+   * Bot-only anti-ban humanization (uazapi). When true, emit a
+   * "composing" presence and wait a text-length-proportional delay
+   * BEFORE sending, so the reply doesn't land in machine time. Default
+   * false — real humans in the inbox and deterministic flows/automations
+   * already type at human speed, so they never set this. No-op on Meta.
+   */
+  humanize?: boolean
+}
+
+/**
+ * Human-like typing delay for a bot reply, proportional to message
+ * length and clamped to 1.5–6s. A sub-second, fixed-interval reply is a
+ * classic automation signature on unofficial (uazapi) numbers; pairing
+ * this pause with a "composing" presence mimics a person typing.
+ */
+export function humanizedTypingDelayMs(textLength: number): number {
+  return Math.min(6000, Math.max(1500, textLength * 50))
 }
 
 export async function providerSendText(
   args: ProviderSendTextArgs,
 ): Promise<{ messageId: string }> {
-  const { config, to, text, contextMessageId } = args
+  const { config, to, text, contextMessageId, humanize } = args
   if (providerOf(config) === 'uazapi') {
-    return uazapiSendText({ ctx: uazapiCtx(config), to, text })
+    const ctx = uazapiCtx(config)
+    if (humanize) {
+      const delayMs = humanizedTypingDelayMs(text.length)
+      await uazapiSendPresence({ ctx, to, presence: 'composing', delayMs })
+      await new Promise((r) => setTimeout(r, delayMs))
+    }
+    return uazapiSendText({ ctx, to, text })
   }
   return sendTextMessage({
     phoneNumberId: config.phone_number_id,

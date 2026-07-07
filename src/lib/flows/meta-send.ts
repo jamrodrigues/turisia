@@ -44,6 +44,12 @@ interface SendTextEngineArgs {
   conversationId: string
   contactId: string
   text: string
+  /**
+   * Bot-only anti-ban humanization (uazapi): emit "digitando…" + a
+   * short human-like delay before the send. Only the AI brains
+   * (auto-reply / n8n) pass this; flows and manual sends leave it off.
+   */
+  humanize?: boolean
 }
 
 /**
@@ -94,6 +100,7 @@ export async function engineSendText(
       config,
       to: phone,
       text: args.text,
+      humanize: args.humanize,
     })
     return r.messageId
   }

@@ -160,6 +160,43 @@ export async function uazapiSendMedia(
   return { messageId: extractMessageId(data) }
 }
 
+export interface UazapiSendPresenceArgs {
+  ctx: UazapiContext
+  /** Recipient phone/jid, same shape as a send. */
+  to: string
+  /** 'composing' shows "digitando…"; 'recording' shows "gravando áudio…". */
+  presence?: 'composing' | 'recording' | 'paused'
+  /** How long the server keeps the presence up, ms. */
+  delayMs?: number
+}
+
+/**
+ * Show a typing / recording presence indicator in the chat.
+ *
+ *   POST /message/presence { number, presence, delay }
+ *
+ * Best-effort by design: presence is cosmetic anti-ban signalling, so a
+ * failure here must NEVER break the actual send that follows — every
+ * error is swallowed to a console.warn.
+ */
+export async function uazapiSendPresence(
+  args: UazapiSendPresenceArgs,
+): Promise<void> {
+  const { ctx, to, presence = 'composing', delayMs = 2000 } = args
+  try {
+    await uazapiPost(ctx, '/message/presence', {
+      number: to,
+      presence,
+      delay: delayMs,
+    })
+  } catch (err) {
+    console.warn(
+      '[uazapi] presence failed (non-fatal):',
+      err instanceof Error ? err.message : err,
+    )
+  }
+}
+
 export interface UazapiSendReactionArgs {
   ctx: UazapiContext
   to: string

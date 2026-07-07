@@ -146,6 +146,7 @@ export async function dispatchInboundToAiReply(
         conversationId,
         contactId,
         text,
+        humanize: true,
       }),
     )
   } catch (err) {

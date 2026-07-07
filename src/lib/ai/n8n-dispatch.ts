@@ -192,6 +192,7 @@ export async function dispatchInboundToN8n(
             conversationId,
             contactId,
             text: fixMojibake(out!.reply!),
+            humanize: true,
           }),
         )
       }

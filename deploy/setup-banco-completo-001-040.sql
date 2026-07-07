@@ -1,54 +1,5 @@
--- ============================================================
--- SETUP COMPLETO DO BANCO — migrations 001 a 038 (gerado)
---
--- Bundle de todas as migrations em ordem, para provisionar um
--- projeto Supabase NOVO de uma vez (SQL Editor ou psql).
--- Fonte de verdade: supabase/migrations/*.sql. Regenerar com o
--- script no final deste header se novas migrations forem criadas.
---
--- Arquivos incluidos (38):
---   001_initial_schema.sql
---   002_pipelines_enhancements.sql
---   003_broadcast_recipient_wamid.sql
---   004_contact_delete_set_null.sql
---   005_broadcast_counts_incremental.sql
---   006_automations.sql
---   007_automations_increment_counter.sql
---   008_profile_avatars_storage.sql
---   009_message_actions.sql
---   010_flows.sql
---   011_profile_beta_features.sql
---   012_flows_increment_counter.sql
---   013_whatsapp_config_phone_number_id_unique.sql
---   014_message_templates_meta_integration.sql
---   015_whatsapp_config_registration.sql
---   016_flow_media.sql
---   017_account_sharing.sql
---   018_account_member_rpcs.sql
---   019_invitation_rpcs.sql
---   020_account_sharing_followups.sql
---   021_account_default_currency.sql
---   022_contact_phone_dedup.sql
---   023_chat_media.sql
---   024_member_presence.sql
---   025_filter_contacts_by_tags.sql
---   026_api_keys.sql
---   027_notifications.sql
---   028_webhook_endpoints.sql
---   029_ai_reply.sql
---   030_ai_knowledge.sql
---   031_whatsapp_provider_uazapi.sql
---   032_ai_tier_and_n8n.sql
---   033_handoff_metadata.sql
---   034_ai_conversation_state.sql
---   035_lock_down_secret_configs.sql
---   036_billing_and_vertical.sql
---   037_handoff_notification.sql
---   038_broadcast_free_text.sql
--- ============================================================
 
-
--- >>>>>>>>>>>>>>>>>>>> 001_initial_schema.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 001_initial_schema.sql
 
 -- ============================================================
 -- Idempotent migration — safe to run multiple times.
@@ -473,7 +424,7 @@ BEGIN
   END IF;
 END $$;
 
--- >>>>>>>>>>>>>>>>>>>> 002_pipelines_enhancements.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 002_pipelines_enhancements.sql
 
 -- ============================================================
 -- Pipeline enhancements:
@@ -510,7 +461,7 @@ END $$;
 ALTER TABLE deals
   ADD CONSTRAINT deals_status_check CHECK (status IN ('open', 'won', 'lost'));
 
--- >>>>>>>>>>>>>>>>>>>> 003_broadcast_recipient_wamid.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 003_broadcast_recipient_wamid.sql
 
 -- ============================================================
 -- Broadcast recipient correlation + aggregate counts
@@ -597,7 +548,7 @@ CREATE TRIGGER broadcast_recipients_aggregate
 AFTER INSERT OR UPDATE OR DELETE ON broadcast_recipients
 FOR EACH ROW EXECUTE FUNCTION public.broadcast_recipient_aggregate_trigger();
 
--- >>>>>>>>>>>>>>>>>>>> 004_contact_delete_set_null.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 004_contact_delete_set_null.sql
 
 -- ============================================================
 -- Allow contact deletion without wiping history.
@@ -665,7 +616,7 @@ ALTER TABLE deals
     FOREIGN KEY (contact_id) REFERENCES contacts(id)
     ON DELETE SET NULL;
 
--- >>>>>>>>>>>>>>>>>>>> 005_broadcast_counts_incremental.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 005_broadcast_counts_incremental.sql
 
 -- ============================================================
 -- Incremental broadcast aggregate trigger.
@@ -797,7 +748,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- >>>>>>>>>>>>>>>>>>>> 006_automations.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 006_automations.sql
 
 -- ============================================================
 -- 006_automations.sql — Automations feature
@@ -940,7 +891,7 @@ ALTER TABLE automation_pending_executions ENABLE ROW LEVEL SECURITY;
 -- No SELECT/INSERT/UPDATE/DELETE policy for authenticated users — all
 -- access is server-side via the service-role key.
 
--- >>>>>>>>>>>>>>>>>>>> 007_automations_increment_counter.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 007_automations_increment_counter.sql
 
 -- ============================================================
 -- 007_automations_increment_counter.sql
@@ -978,7 +929,7 @@ REVOKE ALL ON FUNCTION increment_automation_execution_count(UUID) FROM anon;
 REVOKE ALL ON FUNCTION increment_automation_execution_count(UUID) FROM authenticated;
 GRANT EXECUTE ON FUNCTION increment_automation_execution_count(UUID) TO service_role;
 
--- >>>>>>>>>>>>>>>>>>>> 008_profile_avatars_storage.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 008_profile_avatars_storage.sql
 
 -- ============================================================
 -- 008_profile_avatars_storage.sql
@@ -1040,7 +991,7 @@ CREATE POLICY "Users can delete their own avatar"
     AND auth.uid()::text = (storage.foldername(name))[1]
   );
 
--- >>>>>>>>>>>>>>>>>>>> 009_message_actions.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 009_message_actions.sql
 
 -- ============================================================
 -- Chat actions: reply linkage + reactions
@@ -1157,7 +1108,7 @@ BEGIN
   END IF;
 END $$;
 
--- >>>>>>>>>>>>>>>>>>>> 010_flows.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 010_flows.sql
 
 -- ============================================================
 -- Conversational Flows: stateful, branching WhatsApp chatbot.
@@ -1440,7 +1391,7 @@ BEGIN
   END IF;
 END $$;
 
--- >>>>>>>>>>>>>>>>>>>> 011_profile_beta_features.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 011_profile_beta_features.sql
 
 -- ============================================================
 -- Per-account beta feature flag column on `profiles`.
@@ -1483,7 +1434,7 @@ ALTER TABLE profiles
 -- lookup by primary key / user_id, both already indexed) and very
 -- rarely written.
 
--- >>>>>>>>>>>>>>>>>>>> 012_flows_increment_counter.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 012_flows_increment_counter.sql
 
 -- ============================================================
 -- 012_flows_increment_counter.sql
@@ -1522,7 +1473,7 @@ REVOKE ALL ON FUNCTION increment_flow_execution_count(UUID) FROM anon;
 REVOKE ALL ON FUNCTION increment_flow_execution_count(UUID) FROM authenticated;
 GRANT EXECUTE ON FUNCTION increment_flow_execution_count(UUID) TO service_role;
 
--- >>>>>>>>>>>>>>>>>>>> 013_whatsapp_config_phone_number_id_unique.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 013_whatsapp_config_phone_number_id_unique.sql
 
 -- ============================================================
 -- whatsapp_config: enforce one user per phone_number_id
@@ -1609,7 +1560,7 @@ BEGIN
   END IF;
 END $$;
 
--- >>>>>>>>>>>>>>>>>>>> 014_message_templates_meta_integration.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 014_message_templates_meta_integration.sql
 
 -- ============================================================
 -- message_templates: Meta-integration columns + raw-enum status
@@ -1810,7 +1761,7 @@ CREATE INDEX IF NOT EXISTS idx_message_templates_meta_template_id
   ON message_templates (meta_template_id)
   WHERE meta_template_id IS NOT NULL;
 
--- >>>>>>>>>>>>>>>>>>>> 015_whatsapp_config_registration.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 015_whatsapp_config_registration.sql
 
 -- ============================================================
 -- whatsapp_config: track Meta Cloud API registration state
@@ -1858,7 +1809,7 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_config_registered_at
   ON whatsapp_config (registered_at)
   WHERE registered_at IS NULL;
 
--- >>>>>>>>>>>>>>>>>>>> 016_flow_media.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 016_flow_media.sql
 
 -- ============================================================
 -- 016_flow_media.sql
@@ -1975,7 +1926,7 @@ CREATE POLICY "Users can delete their own flow media"
     AND auth.uid()::text = (storage.foldername(name))[1]
   );
 
--- >>>>>>>>>>>>>>>>>>>> 017_account_sharing.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 017_account_sharing.sql
 
 -- ============================================================
 -- 017_account_sharing.sql — Multi-user accounts (foundation)
@@ -2667,7 +2618,7 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- >>>>>>>>>>>>>>>>>>>> 018_account_member_rpcs.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 018_account_member_rpcs.sql
 
 -- ============================================================
 -- 018_account_member_rpcs.sql — RPCs for member management
@@ -2953,7 +2904,7 @@ ALTER FUNCTION public.transfer_account_ownership(UUID) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.transfer_account_ownership(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.transfer_account_ownership(UUID) TO authenticated;
 
--- >>>>>>>>>>>>>>>>>>>> 019_invitation_rpcs.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 019_invitation_rpcs.sql
 
 -- ============================================================
 -- 019_invitation_rpcs.sql — peek + redeem invitation RPCs
@@ -3193,7 +3144,7 @@ ALTER FUNCTION public.redeem_invitation(TEXT) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.redeem_invitation(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.redeem_invitation(TEXT) TO authenticated;
 
--- >>>>>>>>>>>>>>>>>>>> 020_account_sharing_followups.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 020_account_sharing_followups.sql
 
 -- ============================================================
 -- 020_account_sharing_followups.sql — review-board fixes for
@@ -3318,7 +3269,7 @@ CREATE POLICY "Members can delete flow media"
 -- Public read policy from 016 stays as-is; reads cross both path
 -- conventions without modification.
 
--- >>>>>>>>>>>>>>>>>>>> 021_account_default_currency.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 021_account_default_currency.sql
 
 -- ============================================================
 -- 021_account_default_currency
@@ -3353,7 +3304,7 @@ ALTER TABLE accounts
   ADD CONSTRAINT accounts_default_currency_format
   CHECK (default_currency ~ '^[A-Z]{3}$');
 
--- >>>>>>>>>>>>>>>>>>>> 022_contact_phone_dedup.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 022_contact_phone_dedup.sql
 
 -- ============================================================
 -- 022_contact_phone_dedup
@@ -3476,7 +3427,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_account_phone_normalized
   ON contacts (account_id, phone_normalized)
   WHERE phone_normalized <> '';
 
--- >>>>>>>>>>>>>>>>>>>> 023_chat_media.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 023_chat_media.sql
 
 -- ============================================================
 -- 023_chat_media.sql
@@ -3601,7 +3552,7 @@ CREATE POLICY "Members can delete chat media"
     )
   );
 
--- >>>>>>>>>>>>>>>>>>>> 024_member_presence.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 024_member_presence.sql
 
 -- ============================================================
 -- 024_member_presence.sql — team member presence (online / away)
@@ -3705,7 +3656,7 @@ BEGIN
   END IF;
 END $$;
 
--- >>>>>>>>>>>>>>>>>>>> 025_filter_contacts_by_tags.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 025_filter_contacts_by_tags.sql
 
 -- ============================================================
 -- 025_filter_contacts_by_tags.sql — server-side tag filter
@@ -3783,7 +3734,7 @@ ALTER FUNCTION public.filter_contacts_by_tags(UUID[], TEXT, INT, INT) OWNER TO p
 REVOKE ALL ON FUNCTION public.filter_contacts_by_tags(UUID[], TEXT, INT, INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.filter_contacts_by_tags(UUID[], TEXT, INT, INT) TO authenticated;
 
--- >>>>>>>>>>>>>>>>>>>> 026_api_keys.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 026_api_keys.sql
 
 -- ============================================================
 -- 026_api_keys.sql — Public API credentials (groundwork)
@@ -3870,7 +3821,7 @@ DROP POLICY IF EXISTS api_keys_delete ON api_keys;
 CREATE POLICY api_keys_delete ON api_keys FOR DELETE
   USING (is_account_member(account_id, 'admin'));
 
--- >>>>>>>>>>>>>>>>>>>> 027_notifications.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 027_notifications.sql
 
 -- ============================================================
 -- NOTIFICATIONS
@@ -4004,7 +3955,7 @@ BEGIN
   END IF;
 END $$;
 
--- >>>>>>>>>>>>>>>>>>>> 028_webhook_endpoints.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 028_webhook_endpoints.sql
 
 -- ============================================================
 -- 028_webhook_endpoints.sql — Outbound event webhooks (public API)
@@ -4110,7 +4061,7 @@ RETURNS void AS $$
   WHERE id = endpoint_id;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
 
--- >>>>>>>>>>>>>>>>>>>> 029_ai_reply.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 029_ai_reply.sql
 
 -- ============================================================
 -- 029_ai_reply.sql — AI reply assistant (bring-your-own-key)
@@ -4244,7 +4195,7 @@ RETURNS boolean AS $$
   SELECT EXISTS (SELECT 1 FROM claimed);
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
 
--- >>>>>>>>>>>>>>>>>>>> 030_ai_knowledge.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 030_ai_knowledge.sql
 
 -- ============================================================
 -- 030_ai_knowledge.sql — AI knowledge base (RAG grounding)
@@ -4451,7 +4402,7 @@ GRANT EXECUTE ON FUNCTION public.match_ai_knowledge_fts(uuid, text, integer) TO 
 REVOKE ALL ON FUNCTION public.match_ai_knowledge_semantic(uuid, text, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.match_ai_knowledge_semantic(uuid, text, integer) TO authenticated, service_role;
 
--- >>>>>>>>>>>>>>>>>>>> 031_whatsapp_provider_uazapi.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 031_whatsapp_provider_uazapi.sql
 
 -- ============================================================
 -- 031_whatsapp_provider_uazapi
@@ -4502,7 +4453,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_config_uazapi_instance
   ON whatsapp_config (uazapi_instance_name)
   WHERE uazapi_instance_name IS NOT NULL;
 
--- >>>>>>>>>>>>>>>>>>>> 032_ai_tier_and_n8n.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 032_ai_tier_and_n8n.sql
 
 -- ============================================================
 -- 032_ai_tier_and_n8n
@@ -4539,7 +4490,7 @@ COMMENT ON COLUMN ai_configs.n8n_webhook_url IS
 COMMENT ON COLUMN ai_configs.n8n_shared_secret IS
   'Advanced tier: encrypted secret sent as x-crm-secret to n8n and required back.';
 
--- >>>>>>>>>>>>>>>>>>>> 033_handoff_metadata.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 033_handoff_metadata.sql
 
 -- ============================================================
 -- 033_handoff_metadata
@@ -4614,7 +4565,7 @@ $$;
 ALTER FUNCTION public.return_conversation_to_bot(uuid) OWNER TO postgres;
 GRANT EXECUTE ON FUNCTION public.return_conversation_to_bot(uuid) TO authenticated, service_role;
 
--- >>>>>>>>>>>>>>>>>>>> 034_ai_conversation_state.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 034_ai_conversation_state.sql
 
 -- ============================================================
 -- 034_ai_conversation_state
@@ -4647,7 +4598,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup_wa_id
   ON messages (conversation_id, message_id)
   WHERE message_id IS NOT NULL;
 
--- >>>>>>>>>>>>>>>>>>>> 035_lock_down_secret_configs.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 035_lock_down_secret_configs.sql
 
 -- ============================================================
 -- 035_lock_down_secret_configs
@@ -4715,7 +4666,7 @@ $$;
 ALTER FUNCTION public.account_integration_status() OWNER TO postgres;
 GRANT EXECUTE ON FUNCTION public.account_integration_status() TO authenticated, service_role;
 
--- >>>>>>>>>>>>>>>>>>>> 036_billing_and_vertical.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 036_billing_and_vertical.sql
 
 -- ============================================================
 -- 036_billing_and_vertical
@@ -4790,7 +4741,7 @@ $$;
 ALTER FUNCTION public.account_billing_status() OWNER TO postgres;
 GRANT EXECUTE ON FUNCTION public.account_billing_status() TO authenticated, service_role;
 
--- >>>>>>>>>>>>>>>>>>>> 037_handoff_notification.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 037_handoff_notification.sql
 
 -- ============================================================
 -- 037_handoff_notification
@@ -4890,7 +4841,7 @@ CREATE TRIGGER on_conversation_handoff
   AFTER UPDATE OF ai_autoreply_disabled ON conversations
   FOR EACH ROW EXECUTE FUNCTION notify_conversation_handoff();
 
--- >>>>>>>>>>>>>>>>>>>> 038_broadcast_free_text.sql >>>>>>>>>>>>>>>>>>>>
+-- >>> 038_broadcast_free_text.sql
 
 -- ============================================================
 -- 038_broadcast_free_text
@@ -4935,3 +4886,187 @@ ALTER TABLE broadcasts
     (kind = 'template' AND template_name IS NOT NULL)
     OR (kind = 'text' AND message_body IS NOT NULL)
   );
+
+-- >>> 039_ai_usage.sql
+
+-- ============================================================
+-- 039_ai_usage
+--
+-- Metering de consumo de IA por conta. Cada chamada a um provedor
+-- (auto-reply simples, cérebro n8n, rascunho, playground, transcrição)
+-- grava um evento com tokens e custo estimado em USD (calculado no
+-- momento do insert com a tabela de preços de src/lib/ai/pricing.ts —
+-- snapshot, não recalculado se o preço mudar depois).
+--
+-- Design:
+--   * INSERT: somente service-role (rotas server-side). Sem policy de
+--     INSERT para clients.
+--   * SELECT: admins da conta (painel "Consumo de IA" em Configurações).
+--   * ai_usage_summary(): agregação server-side (dia/modelo/feature)
+--     para o painel — evita puxar milhares de linhas pro browser.
+--   * status='error' registra chamadas que falharam (visibilidade de
+--     falhas do bot no painel, além do custo).
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ai_usage_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  feature TEXT NOT NULL CHECK (feature IN (
+    'auto_reply',     -- tier simples (responder built-in)
+    'n8n_reply',      -- tier avançado (workflow n8n reportou usage)
+    'draft',          -- rascunho sugerido no inbox
+    'playground',     -- testes do admin na tela de IA
+    'transcription',  -- voz → texto (Whisper/4o-transcribe)
+    'embedding'       -- base de conhecimento (ingest/busca)
+  )),
+  provider TEXT NOT NULL,          -- openai | anthropic | n8n
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd NUMERIC(12,6) NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'ok' CHECK (status IN ('ok', 'error')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_usage_account_created
+  ON ai_usage_events(account_id, created_at DESC);
+
+ALTER TABLE ai_usage_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS ai_usage_select ON ai_usage_events;
+CREATE POLICY ai_usage_select ON ai_usage_events FOR SELECT
+  USING (is_account_member(account_id, 'admin'));
+
+-- ------------------------------------------------------------
+-- Resumo agregado para o painel. SECURITY DEFINER + gate de admin
+-- interno (mesmo padrão de account_integration_status, migration 035).
+-- Retorna uma linha por (dia, feature, provider, model).
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION ai_usage_summary(
+  p_from TIMESTAMPTZ DEFAULT date_trunc('month', NOW()),
+  p_to   TIMESTAMPTZ DEFAULT NOW()
+)
+RETURNS TABLE (
+  day DATE,
+  feature TEXT,
+  provider TEXT,
+  model TEXT,
+  calls BIGINT,
+  errors BIGINT,
+  input_tokens BIGINT,
+  output_tokens BIGINT,
+  cost_usd NUMERIC
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_account_id UUID;
+BEGIN
+  SELECT account_id INTO v_account_id
+  FROM profiles WHERE user_id = auth.uid();
+
+  IF v_account_id IS NULL
+     OR NOT is_account_member(v_account_id, 'admin') THEN
+    RETURN; -- não-admin: sem linhas
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    (e.created_at AT TIME ZONE 'UTC')::date AS day,
+    e.feature,
+    e.provider,
+    e.model,
+    COUNT(*)::bigint AS calls,
+    COUNT(*) FILTER (WHERE e.status = 'error')::bigint AS errors,
+    COALESCE(SUM(e.input_tokens), 0)::bigint AS input_tokens,
+    COALESCE(SUM(e.output_tokens), 0)::bigint AS output_tokens,
+    COALESCE(SUM(e.cost_usd), 0)::numeric AS cost_usd
+  FROM ai_usage_events e
+  WHERE e.account_id = v_account_id
+    AND e.created_at >= p_from
+    AND e.created_at < p_to
+  GROUP BY 1, 2, 3, 4
+  ORDER BY 1 DESC, 9 DESC;
+END;
+$$;
+
+ALTER FUNCTION ai_usage_summary(TIMESTAMPTZ, TIMESTAMPTZ) OWNER TO postgres;
+GRANT EXECUTE ON FUNCTION ai_usage_summary(TIMESTAMPTZ, TIMESTAMPTZ)
+  TO authenticated, service_role;
+
+-- >>> 040_daily_send_limit.sql
+
+-- ============================================================
+-- 040_daily_send_limit
+--
+-- Anti-ban (uazapi) + reply-cap ceiling fix. Two independent changes
+-- that ship together (P1+P2 plan):
+--
+--   1. whatsapp_config.daily_send_limit — optional per-day OUTBOUND
+--      ceiling for broadcasts on unofficial (uazapi) numbers. NULL =
+--      no limit. Warm-up guidance: start ~30-50/day and raise weekly.
+--      count_outbound_today() counts a day's agent/bot sends straight
+--      from `messages` (no new counter table to keep in sync).
+--
+--   2. ai_configs.auto_reply_max_per_conversation CHECK raised from
+--      1..20 to 1..200. The old 20 ceiling SILENTLY rejected any
+--      higher value (a "cap 30" never actually stored — it stayed at
+--      the last valid write), so the bot went quiet far sooner than the
+--      admin intended. Product default is now 50 (route + UI).
+--
+-- Idempotent — safe to run multiple times.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. Daily outbound ceiling (uazapi anti-ban)
+-- ------------------------------------------------------------
+ALTER TABLE whatsapp_config
+  ADD COLUMN IF NOT EXISTS daily_send_limit INTEGER; -- NULL = sem teto
+
+COMMENT ON COLUMN whatsapp_config.daily_send_limit IS
+  'Teto de envios OUTBOUND por dia (anti-ban p/ uazapi). NULL = ilimitado. Warm-up: começar ~30-50 e subir semanalmente.';
+
+-- Count today's outbound (agent + bot) messages for an account, in the
+-- America/Recife business day. SECURITY DEFINER so the broadcast guard
+-- (service-role) and dashboards alike can call it past RLS.
+CREATE OR REPLACE FUNCTION public.count_outbound_today(p_account_id UUID)
+RETURNS BIGINT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COUNT(*)
+  FROM messages m
+  JOIN conversations c ON c.id = m.conversation_id
+  WHERE c.account_id = p_account_id
+    AND m.sender_type IN ('agent', 'bot')
+    AND m.created_at >= (
+      date_trunc('day', now() AT TIME ZONE 'America/Recife')
+      AT TIME ZONE 'America/Recife'
+    );
+$$;
+
+ALTER FUNCTION public.count_outbound_today(UUID) OWNER TO postgres;
+GRANT EXECUTE ON FUNCTION public.count_outbound_today(UUID)
+  TO authenticated, service_role;
+
+-- messages(conversation_id, created_at) is already covered by the
+-- inbox's per-conversation ordering index (migration 001/010); the
+-- join+filter above rides that + the conversations PK, so no extra
+-- index is added here. Revisit only if a high-volume account shows this
+-- count as slow.
+
+-- ------------------------------------------------------------
+-- 2. Raise the per-conversation reply cap ceiling 20 → 200
+-- ------------------------------------------------------------
+ALTER TABLE ai_configs
+  DROP CONSTRAINT IF EXISTS ai_configs_auto_reply_max_per_conversation_check;
+
+ALTER TABLE ai_configs
+  ADD CONSTRAINT ai_configs_auto_reply_max_per_conversation_check
+  CHECK (auto_reply_max_per_conversation BETWEEN 1 AND 200);

@@ -33,6 +33,25 @@ function siteUrl(): string {
   return (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
 }
 
+/**
+ * Parse an optional daily_send_limit from the request body.
+ *   absent      → undefined (leave unchanged)
+ *   null | ''   → { value: null } (clear the cap)
+ *   positive int→ { value: n }
+ *   otherwise   → { error }
+ */
+function parseDailyLimit(
+  raw: unknown,
+): { value: number | null } | { error: string } | undefined {
+  if (raw === undefined) return undefined
+  if (raw === null || raw === '') return { value: null }
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n <= 0) {
+    return { error: 'daily_send_limit must be a positive integer or null' }
+  }
+  return { value: n }
+}
+
 export async function GET() {
   try {
     // Admin-only: the response includes the webhook URL with its secret.
@@ -41,7 +60,7 @@ export async function GET() {
     const { data: config } = await supabaseAdmin()
       .from('whatsapp_config')
       .select(
-        'provider, uazapi_base_url, uazapi_instance_name, uazapi_instance_token, uazapi_webhook_secret, status',
+        'provider, uazapi_base_url, uazapi_instance_name, uazapi_instance_token, uazapi_webhook_secret, status, daily_send_limit',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -81,6 +100,7 @@ export async function GET() {
       base_url: config.uazapi_base_url,
       instance_name: config.uazapi_instance_name,
       webhook_url: webhookUrl,
+      daily_send_limit: config.daily_send_limit ?? null,
       instance,
     })
   } catch (err) {
@@ -97,6 +117,40 @@ export async function POST(request: Request) {
     const base_url = String(body.base_url || '').trim().replace(/\/$/, '')
     const instance_name = String(body.instance_name || '').trim().toLowerCase()
     const instance_token = String(body.instance_token || '').trim()
+
+    const daily = parseDailyLimit(body.daily_send_limit)
+    if (daily && 'error' in daily) {
+      return NextResponse.json({ error: daily.error }, { status: 400 })
+    }
+
+    // Settings-only update: change just the daily send ceiling without
+    // re-submitting the instance token (the form clears it after
+    // connect). Requires an existing uazapi config on this account.
+    if (!instance_token && daily) {
+      const { data: current } = await supabaseAdmin()
+        .from('whatsapp_config')
+        .select('id, provider')
+        .eq('account_id', accountId)
+        .maybeSingle()
+      if (!current || current.provider !== 'uazapi') {
+        return NextResponse.json(
+          { error: 'uazapi is not configured for this account.' },
+          { status: 400 },
+        )
+      }
+      const { error: updErr } = await supabaseAdmin()
+        .from('whatsapp_config')
+        .update({
+          daily_send_limit: daily.value,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', current.id)
+      if (updErr) {
+        console.error('[uazapi config] daily_send_limit update failed:', updErr)
+        return NextResponse.json({ error: 'failed to save config' }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, daily_send_limit: daily.value })
+    }
 
     if (!base_url || !instance_name || !instance_token) {
       return NextResponse.json(
@@ -180,6 +234,9 @@ export async function POST(request: Request) {
       connected_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
+    // Carry the daily send ceiling through a full connect save too.
+    if (daily) row.daily_send_limit = daily.value
+
     if (!hasMetaCreds) {
       // No Meta creds to protect (fresh account or already on uazapi):
       // seed the synthetic, stable, unique phone_number_id + an encrypted

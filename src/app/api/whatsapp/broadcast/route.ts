@@ -32,8 +32,26 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
  * for bursty sending than the official Cloud API. Meta needs no extra
  * per-send pause here (the dashboard hook already batches Meta sends
  * 10-at-a-time with a 1s gap).
+ *
+ * Randomized 900–2400ms rather than a fixed value: a perfectly regular
+ * metronome between sends is itself an automation signature. A person
+ * broadcasting by hand never spaces messages at an exact interval.
  */
-const UAZAPI_SEND_DELAY_MS = 700
+export const uazapiSendDelayMs = () => 900 + Math.floor(Math.random() * 1500)
+
+/**
+ * Anti-ban daily ceiling decision for a uazapi free-text broadcast.
+ * Returns true when today's outbound total plus this batch would exceed
+ * the operator's daily_send_limit. A null/absent/≤0 limit means no cap.
+ */
+export function broadcastExceedsDailyLimit(
+  dailyLimit: number | null | undefined,
+  alreadyToday: number,
+  recipientCount: number,
+): boolean {
+  if (dailyLimit == null || Number(dailyLimit) <= 0) return false
+  return alreadyToday + recipientCount > Number(dailyLimit)
+}
 
 /**
  * Free-text broadcast (kind='text'): one plain text message per
@@ -88,7 +106,7 @@ async function sendFreeTextBroadcast(
     }
 
     if (isUazapi && i < recipients.length - 1) {
-      await sleep(UAZAPI_SEND_DELAY_MS)
+      await sleep(uazapiSendDelayMs())
     }
   }
 
@@ -242,6 +260,36 @@ export async function POST(request: Request) {
 
     // ---- Free-text broadcast ----
     if (isFreeText) {
+      // Anti-ban daily ceiling (uazapi only; NULL = no cap). Block the
+      // whole disparo up front when today's outbound + this batch would
+      // cross the operator's daily_send_limit — broadcast is the risky
+      // vector on an unofficial number. 1:1 inbox/bot replies are never
+      // capped here (blocking live attendance is worse than the risk).
+      if (
+        providerOf(config) === 'uazapi' &&
+        config.daily_send_limit != null &&
+        Number(config.daily_send_limit) > 0
+      ) {
+        const dailyLimit = Number(config.daily_send_limit)
+        const { data: usedToday } = await supabase.rpc('count_outbound_today', {
+          p_account_id: accountId,
+        })
+        const already = Number(usedToday ?? 0)
+        if (broadcastExceedsDailyLimit(dailyLimit, already, recipients.length)) {
+          const remaining = Math.max(0, dailyLimit - already)
+          return NextResponse.json(
+            {
+              error: 'daily_limit_exceeded',
+              message:
+                `Teto diário de envios atingido: ${already} de ${dailyLimit} já enviados hoje. ` +
+                `Restam ${remaining} envio(s), mas este disparo tem ${recipients.length} destinatário(s). ` +
+                `Reduza a lista ou aumente o teto diário nas configurações do WhatsApp.`,
+            },
+            { status: 429 },
+          )
+        }
+      }
+
       const { results, sent, failed } = await sendFreeTextBroadcast(
         config,
         recipients,
