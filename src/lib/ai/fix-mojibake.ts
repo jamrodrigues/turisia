@@ -2,18 +2,24 @@
  * Repair UTF-8-as-Windows-1252 mojibake (e.g. "JÃ¡", "â€”", "ðŸ“¸").
  *
  * Some upstream sources — notably the client's pre-existing n8n workflow,
- * whose stored strings AND httpRequest reads were already double-encoded —
- * hand us text whose UTF-8 bytes were decoded through Windows-1252 and
- * re-saved as UTF-8. That renders as garbled accents/emoji when sent to
- * WhatsApp. This reverses that specific transform.
+ * whose stored strings and httpRequest reads are double-encoded, and the
+ * LLM that echoes mojibaked emoji straight out of that prompt — hand us
+ * text whose UTF-8 bytes were decoded through Windows-1252 and re-saved
+ * as UTF-8. That renders as garbled accents/emoji on WhatsApp.
  *
- * SAFETY: only applied when the string is fully re-encodable to a
- * cp1252 byte stream AND those bytes are STRICT-valid UTF-8 that differs
- * from the input. Clean text never satisfies this:
- *   - "é" (U+00E9) → byte 0xE9 → lone byte, invalid UTF-8 → left as-is.
- *   - "•" (U+2022 → cp1252 0x95), "—", real emoji (>U+00FF, no cp1252
- *     byte) → not encodable / invalid → left as-is.
- * So running it on already-correct text is a no-op.
+ * The corruption is often PARTIAL: one message can mix correct accents
+ * (from the LLM's own generation) with a mojibaked emoji (copied from
+ * the prompt). So we repair sequence-by-sequence rather than all-or-
+ * nothing: scan for runs that look like a mojibaked multi-byte UTF-8
+ * character (a lead byte followed by the right number of continuation
+ * bytes, all cp1252-encodable) and decode just those, leaving every
+ * other character untouched.
+ *
+ * SAFETY: a real, already-correct char is only rewritten if it forms a
+ * STRICT-valid UTF-8 sequence with the chars that follow it — which
+ * clean text almost never does (e.g. "é " → byte E9 then space 0x20 is
+ * not a continuation byte, so "é" is emitted as-is). Running it on
+ * correct text is effectively a no-op.
  */
 
 // Windows-1252 0x80–0x9F → Unicode. The rest (0xA0–0xFF) is identity.
@@ -33,32 +39,53 @@ function cp1252Byte(cp: number): number | null {
   if (cp <= 0x7f) return cp
   if (cp in CP1252_HIGH) return CP1252_HIGH[cp]
   // 0xA0–0xFF identity, PLUS the five cp1252-undefined 0x80–0x9F slots
-  // (0x81/0x8D/0x8F/0x90/0x9D) which pass through as U+0081…U+009D. Those
-  // appear in mojibake like "Á" (UTF-8 C3 81 → "Ã"+U+0081), so they must
-  // round-trip back to their byte. Everything ≥U+0100 has no cp1252 byte.
+  // (0x81/0x8D/0x8F/0x90/0x9D) which pass through as U+0081…U+009D and
+  // appear in mojibake like "Á" (UTF-8 C3 81 → "Ã"+U+0081).
   if (cp >= 0x80 && cp <= 0xff) return cp
-  return null
+  return null // anything ≥ U+0100 has no cp1252 byte
 }
 
-/**
- * Return the de-mojibaked string, or the input unchanged when it isn't
- * (recognizable) mojibake.
- */
+/** Expected UTF-8 sequence length for a lead byte, or 0 if not a lead. */
+function leadLen(b: number): number {
+  if (b >= 0xc2 && b <= 0xdf) return 2
+  if (b >= 0xe0 && b <= 0xef) return 3
+  if (b >= 0xf0 && b <= 0xf4) return 4
+  return 0
+}
+
 export function fixMojibake(input: string): string {
   if (!input) return input
-  const bytes: number[] = []
-  for (const ch of input) {
-    const b = cp1252Byte(ch.codePointAt(0)!)
-    if (b === null) return input // contains a char no mojibake would produce
-    bytes.push(b)
+  const chars = Array.from(input) // code-point units
+  let out = ''
+  let i = 0
+  while (i < chars.length) {
+    const b0 = cp1252Byte(chars[i].codePointAt(0)!)
+    const len = b0 === null ? 0 : leadLen(b0)
+
+    if (len > 0 && i + len <= chars.length) {
+      const bytes = [b0 as number]
+      let ok = true
+      for (let j = 1; j < len; j++) {
+        const bj = cp1252Byte(chars[i + j].codePointAt(0)!)
+        if (bj === null || bj < 0x80 || bj > 0xbf) {
+          ok = false
+          break
+        }
+        bytes.push(bj)
+      }
+      if (ok) {
+        try {
+          out += utf8Strict.decode(new Uint8Array(bytes))
+          i += len
+          continue
+        } catch {
+          // not a real UTF-8 sequence → fall through, emit as-is
+        }
+      }
+    }
+
+    out += chars[i]
+    i += 1
   }
-  let decoded: string
-  try {
-    decoded = utf8Strict.decode(new Uint8Array(bytes))
-  } catch {
-    return input // bytes aren't valid UTF-8 → wasn't double-encoded
-  }
-  // Only accept when it actually changed AND introduced no replacement
-  // chars (strict decode already guarantees the latter).
-  return decoded !== input ? decoded : input
+  return out
 }

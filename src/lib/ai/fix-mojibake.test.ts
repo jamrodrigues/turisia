@@ -37,6 +37,16 @@ describe('fixMojibake', () => {
     }
   })
 
+  it('repairs PARTIAL mojibake (correct accents + mojibaked emoji)', () => {
+    // real production case: LLM writes clean accents but echoes a
+    // mojibaked camera emoji copied from its (mojibaked) prompt.
+    const mixed = 'Chevrolet Onix 2018 manual ' + mojify('📸') + '\n\nQuer ver as fotos?'
+    // the accents in this sentence are already correct; only the emoji is broken
+    expect(fixMojibake('automático ' + mojify('📸'))).toBe('automático 📸')
+    expect(fixMojibake(mixed)).toBe('Chevrolet Onix 2018 manual 📸\n\nQuer ver as fotos?')
+    expect(fixMojibake('sábado às 15h ' + mojify('😊') + ' ok')).toBe('sábado às 15h 😊 ok')
+  })
+
   it('leaves already-correct text untouched (no-op)', () => {
     for (const s of [
       'Ele é uma ótima escolha',
