@@ -205,15 +205,20 @@ rebaixou 30→3 em teste.
 1. Em `dispatchInboundToBrain` (`src/lib/ai/dispatch.ts`), ANTES do
    pre-check de elegibilidade: se `conversations.last_message_at` (ou a
    última msg do customer) for há MAIS de 24h, zerar `ai_reply_count`
-   (UPDATE direto, best-effort). Nova conversa "do dia" = cota nova.
+   (UPDATE direto, best-effort). Nova conversa "do dia" = cota nova. Default do produto: 50.
    Cuidado: usar o valor de last_message_at ANTES do insert da mensagem
    atual — o pipeline atualiza last_message_at no processamento; buscar
    a penúltima mensagem: `messages` da conversa, 2ª mais recente,
    `created_at < now()-24h` → reset. Simples e sem migration.
 2. UI `ai-config.tsx`: garantir que o campo "máx. respostas por
    conversa" carrega o valor ATUAL do banco no load (e não um default
-   hardcoded tipo 3) — verificar; se já carrega, apenas subir o default
-   do form para 30 quando não houver valor.
+   hardcoded tipo 3) — verificar; e subir o DEFAULT do form (e qualquer
+   default de backend/migration) para **50** quando não houver valor
+   (decisão do produto: IA consome turnos rápido numa venda).
+3. **Já resolvido, apenas VERIFICAR:** o botão "voltar para o robô"
+   (RPC `return_conversation_to_bot`, migration 033 linha ~62) já zera
+   `ai_reply_count` — atendente devolve pra IA ⇒ cota renovada. Conferir
+   que nenhum caminho novo de unmute pula esse RPC.
 
 **Teste:** unit do reset (mock: penúltima msg >24h → update chamado;
 <24h → não).
