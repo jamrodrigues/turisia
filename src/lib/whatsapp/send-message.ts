@@ -77,6 +77,10 @@ export interface SendMessageParams {
   /** Structured template params (header/body/buttons). */
   templateMessageParams?: unknown;
   replyToMessageId?: string | null;
+  /** The signed-in agent sending this (dashboard inbox). Recorded as
+   *  handoff_by when the send stands the AI bot down. Undefined for
+   *  the public API (no interactive user) → recorded as 'agent'. */
+  actingUserId?: string | null;
 }
 
 export interface SendMessageResult {
@@ -178,6 +182,7 @@ export async function sendMessageToConversation(
     templateParams,
     templateMessageParams,
     replyToMessageId,
+    actingUserId,
   } = params;
 
   if (!conversationId) {
@@ -432,12 +437,34 @@ export async function sendMessageToConversation(
     );
   }
 
+  // A human agent replying from the inbox IS a takeover: stand the AI
+  // bot down on this conversation so it stops answering over the agent
+  // (isBotEligible checks ai_autoreply_disabled). Sticky until someone
+  // clicks "voltar para o robô" (return_conversation_to_bot RPC). Only
+  // flips it the FIRST time (skip when already disabled) so we don't
+  // rewrite handoff metadata on every subsequent agent message. Also
+  // fires the handoff notification trigger (migration 037).
+  const { data: convState } = await db
+    .from('conversations')
+    .select('ai_autoreply_disabled')
+    .eq('id', conversationId)
+    .maybeSingle();
+  const takeover = convState ? !convState.ai_autoreply_disabled : false;
+
   await db
     .from('conversations')
     .update({
       last_message_text: contentText || `[${messageType}]`,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      ...(takeover
+        ? {
+            ai_autoreply_disabled: true,
+            handoff_at: new Date().toISOString(),
+            handoff_reason: 'manual',
+            handoff_by: actingUserId ?? 'agent',
+          }
+        : {}),
     })
     .eq('id', conversationId);
 

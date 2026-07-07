@@ -3,6 +3,7 @@ import { buildConversationContext } from './context'
 import { latestUserMessage } from './query'
 import { engineSendMedia, engineSendText } from '@/lib/flows/meta-send'
 import { sendWithRetry } from './send-retry'
+import { fixMojibake } from './fix-mojibake'
 import { isBotEligible, markHandoff } from './eligibility'
 import type { TierConfig } from './config'
 import type { MediaKind } from '@/lib/whatsapp/meta-api'
@@ -164,13 +165,15 @@ export async function dispatchInboundToN8n(
       if (hasReplyText) {
         // Retry once on transient provider failure — the slot is already
         // claimed, so losing this send loses the reply for good.
+        // fixMojibake: the n8n workflow's text is double-encoded upstream
+        // (see fix-mojibake.ts) — repair before it reaches the customer.
         await sendWithRetry(() =>
           engineSendText({
             accountId,
             userId: configOwnerUserId,
             conversationId,
             contactId,
-            text: out!.reply!,
+            text: fixMojibake(out!.reply!),
           }),
         )
       }
@@ -191,7 +194,7 @@ export async function dispatchInboundToN8n(
               contactId,
               kind,
               link: m.url,
-              caption: m.caption,
+              caption: m.caption ? fixMojibake(m.caption) : m.caption,
             }),
           )
         } catch (err) {
