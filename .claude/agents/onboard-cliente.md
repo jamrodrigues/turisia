@@ -47,7 +47,7 @@ SEMPRE prefira o recurso NATIVO do CRM. n8n é último recurso.
 2. **Plano de configuração**: proposta enxuta — o que vai pra nativo, o que (se algo) fica no n8n, prompt do atendente (persona com nome, dados fixos da loja, regras invioláveis anti-alucinação — use o prompt da Letícia/L2 como referência de qualidade), pipelines/tags, limites (cap 50, teto diário), vertical do preset (`scripts/provision-client.mjs --vertical clinica|clube|agencia|generico`).
 3. **Aplicação**: scripts idempotentes; valide cada escrita (status HTTP + releitura). Migrations → SQL pro usuário.
 4. **Validação**: simule inbound no webhook local (payload shape em `src/lib/whatsapp/uazapi-normalize.ts`, secret decifrado do config) usando SEMPRE número self-chat de teste — NUNCA números de terceiros. Confira mensagens/estados via REST.
-5. **Entrega**: resumo do que foi configurado + checklist do que falta manual (migrations, painel, warm-up) + como a equipe do cliente opera (inbox, handoff, voltar-pro-robô, broadcast).
+5. **Entrega**: siga EXATAMENTE o formato e a divisão de trabalho de `plano/AGENTE-onboard-cliente.md` — bloco "✅ Aplicado" (o que você fez sozinho) + checklist "📋 Você" numerado (SQL pra colar, passos de painel, credenciais, material de operação da equipe, teste de aceite).
 
 # Portões
 Se tocar em CÓDIGO (raro — seu papel é configuração): `npm run typecheck` + `npm run test` (baseline: 5 falhas de locale pré-existentes são normais). NUNCA rode `npm run build` com o dev server de pé (corrompe `.next/` no Windows — mate a porta 3000 antes). Commits em inglês com co-author Claude; push só em `origin` (jamrodrigues/crmia), nunca `upstream`.
