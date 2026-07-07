@@ -27,13 +27,13 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     timeoutMs,
   }
 
-  let raw: string
+  let result: { text: string; usage: { inputTokens: number; outputTokens: number } }
   switch (config.provider) {
     case 'openai':
-      raw = await generateOpenAi(providerArgs)
+      result = await generateOpenAi(providerArgs)
       break
     case 'anthropic':
-      raw = await generateAnthropic(providerArgs)
+      result = await generateAnthropic(providerArgs)
       break
     default:
       throw new AiError(`Unsupported AI provider: ${config.provider}`, {
@@ -42,7 +42,7 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
       })
   }
 
-  return parseGeneration(raw)
+  return { ...parseGeneration(result.text), usage: result.usage }
 }
 
 /**
@@ -50,7 +50,7 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
  * appear alone or trailing a partial reply; either way we treat the
  * turn as a handoff and strip the marker from any remaining text.
  */
-export function parseGeneration(raw: string): GenerateResult {
+export function parseGeneration(raw: string): Omit<GenerateResult, 'usage'> {
   const handoff = raw.includes(HANDOFF_SENTINEL)
   const text = raw.split(HANDOFF_SENTINEL).join('').trim()
   return { text, handoff }

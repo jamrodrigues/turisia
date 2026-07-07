@@ -93,7 +93,7 @@ beforeEach(() => {
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
-  h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
+  h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false, usage: { inputTokens: 100, outputTokens: 20 } })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
 })
 
@@ -187,7 +187,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
 
 describe('dispatchInboundToAiReply — handoff', () => {
   it('disables auto-reply and does not send on handoff', async () => {
-    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, usage: { inputTokens: 100, outputTokens: 5 } })
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.state.updatePayload).toEqual({ ai_autoreply_disabled: true })

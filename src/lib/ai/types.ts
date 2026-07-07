@@ -33,12 +33,21 @@ export interface ChatMessage {
   content: string
 }
 
+/** Token counts reported by the provider for one call. Zeros when the
+ *  provider omitted the usage block (metering records 0s, never guesses). */
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+}
+
 /** Outcome of a generation call. */
 export interface GenerateResult {
   /** The reply text, with any handoff sentinel stripped. */
   text: string
   /** True when the model asked to hand off to a human (auto-reply mode). */
   handoff: boolean
+  /** Provider-reported token usage (ai_usage_events metering, 039). */
+  usage: TokenUsage
 }
 
 /**

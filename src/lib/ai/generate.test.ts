@@ -69,7 +69,7 @@ describe('generateReply — OpenAI', () => {
       messages: [{ role: 'user', content: 'Hi' }],
     })
 
-    expect(res).toEqual({ text: 'Sure — happy to help!', handoff: false })
+    expect(res).toEqual({ text: 'Sure — happy to help!', handoff: false, usage: { inputTokens: 0, outputTokens: 0 } })
     const [url, opts] = fetchMock.mock.calls[0]
     expect(url).toContain('api.openai.com')
     expect(opts.headers.Authorization).toBe('Bearer sk-test')
@@ -120,7 +120,7 @@ describe('generateReply — Anthropic', () => {
       messages: [{ role: 'user', content: 'Hello' }],
     })
 
-    expect(res).toEqual({ text: 'Hi there!', handoff: false })
+    expect(res).toEqual({ text: 'Hi there!', handoff: false, usage: { inputTokens: 0, outputTokens: 0 } })
     const [url, opts] = fetchMock.mock.calls[0]
     expect(url).toContain('api.anthropic.com')
     expect(opts.headers['x-api-key']).toBe('sk-ant-x')

@@ -5,6 +5,7 @@ import { isBotEligible } from './eligibility'
 import { dispatchInboundToAiReply } from './auto-reply'
 import { dispatchInboundToN8n } from './n8n-dispatch'
 import { transcribeAudio } from './transcribe'
+import { recordAiUsage } from './usage'
 
 interface DispatchArgs {
   accountId: string
@@ -144,13 +145,23 @@ async function maybeTranscribeLatestAudio(
       cfg?.provider === 'openai' ? cfg.apiKey : cfg?.embeddingsApiKey ?? null
     if (!key) return
 
-    const text = await transcribeAudio({ url: msg.media_url, apiKey: key })
-    if (!text) return
+    const result = await transcribeAudio({ url: msg.media_url, apiKey: key })
+    if (!result) return
 
     await db
       .from('messages')
-      .update({ content_text: `[áudio] ${text}` })
+      .update({ content_text: `[áudio] ${result.text}` })
       .eq('id', msg.id)
+
+    void recordAiUsage({
+      accountId,
+      conversationId,
+      feature: 'transcription',
+      provider: 'openai',
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+    })
   } catch (err) {
     console.warn(
       '[ai dispatch] transcription step failed:',

@@ -5,6 +5,7 @@ import {
   providerHttpError,
   toNetworkError,
   type ProviderArgs,
+  type ProviderResult,
 } from './shared'
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
@@ -12,6 +13,7 @@ const ANTHROPIC_VERSION = '2023-06-01'
 
 interface AnthropicResponse {
   content?: { type?: string; text?: string }[]
+  usage?: { input_tokens?: number; output_tokens?: number }
 }
 
 /**
@@ -35,9 +37,9 @@ function normalizeForAnthropic(messages: ChatMessage[]): ChatMessage[] {
 /**
  * Call Anthropic's Messages endpoint with the caller's own key.
  * Returns the raw assistant text (handoff parsing happens in
- * `generateReply`).
+ * `generateReply`) plus provider-reported token usage (metering).
  */
-export async function generateAnthropic(args: ProviderArgs): Promise<string> {
+export async function generateAnthropic(args: ProviderArgs): Promise<ProviderResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs } = args
 
   let res: Response
@@ -76,5 +78,11 @@ export async function generateAnthropic(args: ProviderArgs): Promise<string> {
       code: 'empty_response',
     })
   }
-  return text
+  return {
+    text,
+    usage: {
+      inputTokens: data?.usage?.input_tokens ?? 0,
+      outputTokens: data?.usage?.output_tokens ?? 0,
+    },
+  }
 }

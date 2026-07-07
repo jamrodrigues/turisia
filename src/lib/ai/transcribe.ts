@@ -13,6 +13,15 @@
 
 const OPENAI_TRANSCRIBE_URL = 'https://api.openai.com/v1/audio/transcriptions'
 
+export interface TranscribeResult {
+  text: string
+  model: string
+  /** Provider-reported tokens (gpt-4o-*-transcribe return them; whisper-1
+   *  doesn't → zeros). Metering records what the provider said. */
+  inputTokens: number
+  outputTokens: number
+}
+
 export async function transcribeAudio(args: {
   /** Public/hosted audio URL (uazapi /message/download result). */
   url: string
@@ -22,7 +31,8 @@ export async function transcribeAudio(args: {
   model?: string
   /** ISO-639-1 hint improves accuracy; default pt (Brazil). */
   language?: string
-}): Promise<string | null> {
+}): Promise<TranscribeResult | null> {
+  const model = args.model ?? 'gpt-4o-mini-transcribe'
   try {
     const audioRes = await fetch(args.url)
     if (!audioRes.ok) return null
@@ -30,7 +40,7 @@ export async function transcribeAudio(args: {
 
     const form = new FormData()
     form.append('file', blob, 'audio.ogg')
-    form.append('model', args.model ?? 'gpt-4o-mini-transcribe')
+    form.append('model', model)
     form.append('language', args.language ?? 'pt')
 
     const res = await fetch(OPENAI_TRANSCRIBE_URL, {
@@ -42,9 +52,18 @@ export async function transcribeAudio(args: {
       console.warn('[transcribe] whisper non-2xx:', res.status)
       return null
     }
-    const data = (await res.json()) as { text?: string }
+    const data = (await res.json()) as {
+      text?: string
+      usage?: { input_tokens?: number; output_tokens?: number }
+    }
     const text = data.text?.trim()
-    return text || null
+    if (!text) return null
+    return {
+      text,
+      model,
+      inputTokens: data.usage?.input_tokens ?? 0,
+      outputTokens: data.usage?.output_tokens ?? 0,
+    }
   } catch (err) {
     console.warn(
       '[transcribe] failed:',

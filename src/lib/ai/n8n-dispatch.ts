@@ -4,6 +4,7 @@ import { latestUserMessage } from './query'
 import { engineSendMedia, engineSendText } from '@/lib/flows/meta-send'
 import { sendWithRetry } from './send-retry'
 import { fixMojibake } from './fix-mojibake'
+import { recordAiUsage } from './usage'
 import { isBotEligible, markHandoff } from './eligibility'
 import type { TierConfig } from './config'
 import type { MediaKind } from '@/lib/whatsapp/meta-api'
@@ -106,6 +107,10 @@ export async function dispatchInboundToN8n(
       media?: N8nReplyMedia[]
       handoff?: boolean
       reason?: string
+      /** Optional LLM usage the workflow reports back (metering, 039):
+       *  { model, input_tokens, output_tokens }. The CRM can't see the
+       *  n8n-side LLM call otherwise. */
+      usage?: { model?: string; input_tokens?: number; output_tokens?: number }
     } | null = null
     try {
       const res = await fetch(tier.n8nWebhookUrl, {
@@ -136,6 +141,19 @@ export async function dispatchInboundToN8n(
     }
 
     if (!out) return
+
+    // Metering (039): the workflow self-reports its LLM usage.
+    if (out.usage && (out.usage.input_tokens || out.usage.output_tokens)) {
+      void recordAiUsage({
+        accountId,
+        conversationId,
+        feature: 'n8n_reply',
+        provider: 'openai',
+        model: out.usage.model || 'unknown',
+        inputTokens: out.usage.input_tokens ?? 0,
+        outputTokens: out.usage.output_tokens ?? 0,
+      })
+    }
 
     if (out.handoff) {
       await markHandoff(db, conversationId, {

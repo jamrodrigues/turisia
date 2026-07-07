@@ -12,6 +12,14 @@ export interface ProviderArgs {
   timeoutMs: number
 }
 
+/** Raw adapter output: assistant text + provider-reported token usage
+ *  (zeros when the provider omits the usage block — metering never
+ *  guesses). */
+export interface ProviderResult {
+  text: string
+  usage: { inputTokens: number; outputTokens: number }
+}
+
 /** Map a fetch rejection (timeout / DNS / offline) to a typed AiError. */
 export function toNetworkError(err: unknown): AiError {
   if (err instanceof DOMException && err.name === 'TimeoutError') {

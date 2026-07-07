@@ -7,6 +7,7 @@ import { buildSystemPrompt } from './defaults'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { sendWithRetry } from './send-retry'
+import { recordAiUsage } from './usage'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -94,10 +95,21 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text, handoff } = await generateReply({
+    const { text, handoff, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
+    })
+
+    // Metering (039) — fire-and-forget, never blocks the reply path.
+    void recordAiUsage({
+      accountId,
+      conversationId,
+      feature: 'auto_reply',
+      provider: config.provider,
+      model: config.model,
+      inputTokens: usage?.inputTokens ?? 0,
+      outputTokens: usage?.outputTokens ?? 0,
     })
 
     if (handoff || !text) {

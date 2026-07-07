@@ -7,6 +7,7 @@ import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
+import { recordAiUsage } from '@/lib/ai/usage'
 
 // Keep the tested transcript bounded, mirroring the live context window.
 const MAX_TURNS = 20
@@ -84,7 +85,15 @@ export async function POST(request: Request) {
       knowledge,
     })
 
-    const { text, handoff } = await generateReply({ config, systemPrompt, messages })
+    const { text, handoff, usage } = await generateReply({ config, systemPrompt, messages })
+    void recordAiUsage({
+      accountId,
+      feature: 'playground',
+      provider: config.provider,
+      model: config.model,
+      inputTokens: usage?.inputTokens ?? 0,
+      outputTokens: usage?.outputTokens ?? 0,
+    })
     return NextResponse.json({ reply: text, handoff })
   } catch (err) {
     if (err instanceof AiError) {
