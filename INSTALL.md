@@ -69,16 +69,20 @@ cd cliente-x
    Editor`, cole o conteúdo de cada arquivo de `supabase/migrations/` na
    ordem numérica e rode. (Ou concatene todos num só e rode de uma vez.)
 
-   **Opção B — Supabase CLI:**
+   **Opção B — bundle único (mais rápido no painel):** cole o arquivo
+   `deploy/setup-banco-completo-001-038.sql` inteiro no SQL Editor e rode
+   uma vez — ele já traz todas as 38 migrations em ordem.
+
+   **Opção C — Supabase CLI:**
    ```bash
    npx supabase link --project-ref SEU_PROJECT_REF
    npx supabase db push
    ```
 
-   > O arquivo `deploy/setup-banco-001-031.sql` é **antigo** (para até a
-   > 031). **Não use sozinho** — aplique `supabase/migrations/` completo
-   > (001→038), senão faltam tier de IA, handoff, RLS lockdown, billing,
-   > notificação de handoff e broadcast de texto livre.
+   > Regenerar o bundle quando criar novas migrations:
+   > ```bash
+   > node -e "const fs=require('fs'),p='supabase/migrations';let o='';for(const f of fs.readdirSync(p).filter(x=>/^\d{3}_.*\.sql$/.test(x)).sort())o+='\n-- >>> '+f+'\n\n'+fs.readFileSync(p+'/'+f,'utf8');fs.writeFileSync('deploy/setup-banco-completo-001-038.sql',o)"
+   > ```
 
 ### 3.3 Configurar o ambiente
 
