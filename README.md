@@ -21,6 +21,10 @@ The marketing site and self-host docs live in a separate repo:
 ([wacrm.tech](https://wacrm.tech)). This repo is the product —
 clone or fork it to run your own CRM.
 
+> **Instalação passo a passo (deploy por cliente, uazapi + IA):** veja
+> **[INSTALL.md](./INSTALL.md)** — do clone ao bot atendendo no WhatsApp,
+> com exemplo de loja de carros (tier avançado + n8n).
+
 ## What you get out of the box
 
 - **Shared inbox** on the official WhatsApp Business API — multiple
