@@ -201,6 +201,20 @@ de Configuração (Agentes → Configuração) regrava
 `auto_reply_max_per_conversation` com o valor do form — foi o que
 rebaixou 30→3 em teste.
 
+**DESCOBERTA CRÍTICA (2026-07-07):** o CHECK da migration 029 limita
+`auto_reply_max_per_conversation BETWEEN 1 AND 20` — valores >20 são
+REJEITADOS pelo banco (o "cap 30" de testes anteriores nunca gravou; o
+valor real sempre foi 3). A migration 040 deste plano DEVE incluir:
+```sql
+ALTER TABLE ai_configs
+  DROP CONSTRAINT IF EXISTS ai_configs_auto_reply_max_per_conversation_check;
+ALTER TABLE ai_configs
+  ADD CONSTRAINT ai_configs_auto_reply_max_per_conversation_check
+  CHECK (auto_reply_max_per_conversation BETWEEN 1 AND 200);
+```
+E conferir se a rota `/api/ai/config` e a UI `ai-config.tsx` também
+validam/limitam a 20 — subir ambos para 200, default 50.
+
 **Implementação:**
 1. Em `dispatchInboundToBrain` (`src/lib/ai/dispatch.ts`), ANTES do
    pre-check de elegibilidade: se `conversations.last_message_at` (ou a
