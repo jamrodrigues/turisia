@@ -48,7 +48,21 @@ guardam por provider; #7 `message_id` NULL (não `''`) evita colisão no índice
 8. **Teste E2E** do tier avançado (n8n), handoff real, e da trava de cobrança.
 9. **Fase 05/06 código** presente (verticais, white-label, billing gate/webhook) mas não exercitado com cliente/processador real.
 
-> ⚠️ **Migrations 037 e 038 ainda NÃO aplicadas** no Supabase — aplicar antes de usar handoff-notification e broadcast free-text. (036 também, conferir.)
+> ✅ Migrations 036/037/038 **aplicadas** no Supabase (037/038 em 2026-07-06, verificadas via REST).
+
+## E2E uazapi (2026-07-06) — 15/15 asserts ✅
+Suite em self-chat (instância `crmia-teste`, sem terceiros), servidor local + REST:
+- Pipeline inbound: webhook 200 → contato/conversa/mensagem criados ✅
+- Dedup de reentrega (mesmo messageid → 1 linha) ✅
+- **Mídia→Storage REAL**: envio real → `/message/download` real → re-upload → `media_url` no bucket `chat-media`, público e baixável ✅
+- **Handoff**: fromMe real → bot mutado (`manual_phone`) + notificação `conversation_handed_off` criada pelo trigger 037 (corpo pt-BR) ✅
+- Review #1 validado: contato NÃO renomeado pro nome do dono ✅
+- fromMe espelhado como `sender_type='agent'` ✅
+- 038: CHECK rejeita `kind='text'` sem corpo; aceita com corpo ✅
+- Primitivo de envio texto (broadcast free-text) real ✅
+
+Não coberto (exige sessão logada no navegador): fluxo de UI do Envio simples ponta-a-ponta e broadcast com múltiplos destinatários/throttle — smoke manual recomendado no onboarding do 1º cliente.
+Nota: uazapi `/send/media` recusa PNG 1x1 ("unsupported image format" na conversão JPEG) — limitação do servidor com imagens minúsculas, irrelevante em uso real.
 
 ## Como validar localmente
 - Supabase + uazapi já conectados (ver memória do projeto / `.env.local`).
