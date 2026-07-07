@@ -61,7 +61,16 @@ Suite em self-chat (instância `crmia-teste`, sem terceiros), servidor local + R
 - 038: CHECK rejeita `kind='text'` sem corpo; aceita com corpo ✅
 - Primitivo de envio texto (broadcast free-text) real ✅
 
-Não coberto (exige sessão logada no navegador): fluxo de UI do Envio simples ponta-a-ponta e broadcast com múltiplos destinatários/throttle — smoke manual recomendado no onboarding do 1º cliente.
+UI do Envio simples validada pelo usuário no navegador (1 destinatário, kind=text, sent 1/1). Mídia real do celular (áudio+imagem) confirmada indo pro bucket. Falta só broadcast multi-destinatário (throttle em volume).
+
+## Cliente L2 Multimarcas — tier avançado LIGADO (2026-07-06)
+Primeiro cliente real conectado ao cérebro n8n via contrato CRM:
+- **Contrato estendido**: n8n pode responder `{reply, media[], handoff}` — CRM envia texto + fotos (carros) via provider; 1 slot de cap por turno; máx 5 mídias (`n8n-dispatch.ts`).
+- **Workflow novo `L2 — Cérebro CRM`** (id `gYCWLBTnE4wrNvTf`, ativo) criado via API n8n ao lado do antigo (intacto): Webhook `l2-crm-brain` + guard `x-crm-secret` → estoque (`estoque_veiculos` no Supabase do L2, alimentado pelo scraper diário 6h) → OpenAI (credencial n8n `OpenAI L2`, gpt-4.1-mini, prompt Letícia) → `{reply, media[]}` → registrar_lead. Sem envio direto uazapi (CRM é o control plane; envio direto mutaria o bot via eco fromMe).
+- **`ai_configs`**: ai_tier=advanced, n8n_webhook_url, secret encriptado, is_active=true, auto_reply_enabled=true.
+- **E2E validado**: inbound → debounce → n8n (~6s) → resposta da Letícia + 2 fotos reais do Kicks no WhatsApp, persistidas como `bot` no inbox. Handoff por resposta no celular também validado ao vivo (mutou o bot durante o teste — comportamento correto).
+- **Cutover produção** (pendente, decisão do usuário): apontar webhook da instância do número REAL da loja pro CRM (deploy) e desativar o workflow antigo `L2 Multimarcas — Atendente IA`.
+- Limitação conhecida: `buildConversationContext` só inclui `content_type='text'` — áudio transcrito (content_type audio) não entra no history do n8n; cliente que só manda áudio não chega ao cérebro avançado com o texto transcrito.
 Nota: uazapi `/send/media` recusa PNG 1x1 ("unsupported image format" na conversão JPEG) — limitação do servidor com imagens minúsculas, irrelevante em uso real.
 
 ## Como validar localmente
