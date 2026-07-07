@@ -2,6 +2,7 @@ import { supabaseAdmin } from './admin-client'
 import { buildConversationContext } from './context'
 import { latestUserMessage } from './query'
 import { engineSendMedia, engineSendText } from '@/lib/flows/meta-send'
+import { sendWithRetry } from './send-retry'
 import { isBotEligible, markHandoff } from './eligibility'
 import type { TierConfig } from './config'
 import type { MediaKind } from '@/lib/whatsapp/meta-api'
@@ -161,13 +162,17 @@ export async function dispatchInboundToN8n(
       if (claimErr || claimed !== true) return
 
       if (hasReplyText) {
-        await engineSendText({
-          accountId,
-          userId: configOwnerUserId,
-          conversationId,
-          contactId,
-          text: out.reply!,
-        })
+        // Retry once on transient provider failure — the slot is already
+        // claimed, so losing this send loses the reply for good.
+        await sendWithRetry(() =>
+          engineSendText({
+            accountId,
+            userId: configOwnerUserId,
+            conversationId,
+            contactId,
+            text: out!.reply!,
+          }),
+        )
       }
 
       // Media after the text (matches how the old n8n workflow ordered
@@ -178,15 +183,17 @@ export async function dispatchInboundToN8n(
           ? (m.kind as MediaKind)
           : 'image'
         try {
-          await engineSendMedia({
-            accountId,
-            userId: configOwnerUserId,
-            conversationId,
-            contactId,
-            kind,
-            link: m.url,
-            caption: m.caption,
-          })
+          await sendWithRetry(() =>
+            engineSendMedia({
+              accountId,
+              userId: configOwnerUserId,
+              conversationId,
+              contactId,
+              kind,
+              link: m.url,
+              caption: m.caption,
+            }),
+          )
         } catch (err) {
           console.error(
             '[n8n dispatch] media send failed:',

@@ -6,6 +6,7 @@ import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
+import { sendWithRetry } from './send-retry'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -124,13 +125,17 @@ export async function dispatchInboundToAiReply(
     )
     if (claimErr || claimed !== true) return
 
-    await engineSendText({
-      accountId,
-      userId: configOwnerUserId,
-      conversationId,
-      contactId,
-      text,
-    })
+    // Retry once on transient provider failure — the slot is already
+    // claimed, so losing this send loses the reply for good.
+    await sendWithRetry(() =>
+      engineSendText({
+        accountId,
+        userId: configOwnerUserId,
+        conversationId,
+        contactId,
+        text,
+      }),
+    )
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }
