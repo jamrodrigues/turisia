@@ -40,11 +40,11 @@ guardam por provider; #7 `message_id` NULL (não `''`) evita colisão no índice
 ## Pendências técnicas conhecidas (candidatas a review/fix)
 1. ✅ **Mídia recebida → Storage** — FEITO. `store-inbound-media.ts` baixa a mídia do servidor uazapi e re-sobe pro bucket `chat-media` (durável); fallback pra URL do provider se falhar. Wired em `uazapi/webhook/route.ts`.
 2. ✅ **Broadcast texto-livre uazapi** — FEITO. Migration `038` (kind template|text + `message_body`, template cols nullable); rota `/api/whatsapp/broadcast` com branch free-text provider-aware + throttle uazapi (700ms/envio); hook `createAndSendTextBroadcast`; UI nova `/broadcasts/simple`. **Requer aplicar migration 038.**
-3. **Guarda de janela 24h** — resolvida no composer do inbox (review #5); revisar se algum outro caminho de envio ainda aplica a regra Meta em uazapi.
+3. ✅ **Guarda de janela 24h** — AUDITADO. Único ponto que calcula a janela é `message-thread` (corrigido em #5, prop `sessionWindowApplies`); `MessageComposer` só é renderizado lá e não calcula sozinho; nenhum caminho server-side/API (`send-message`, `auto-reply`, v1) aplica 24h. Sem vazamento pro uazapi.
 4. **Transcrição** exige chave OpenAI (Whisper); contas advanced sem chave dependem do n8n transcrever.
 5. **Debounce** usa `setTimeout` dentro de `after()` (ok no maxDuration=60); avaliar fila externa se escalar.
 6. ✅ **Notificação de handoff** — FEITO. Migration `037`: novo `notifications.type='conversation_handed_off'` + trigger em `conversations` (dispara ao `ai_autoreply_disabled` virar true — cobre todos os caminhos de mute; notifica todos os agentes da conta). Frontend: type + ícone. **Requer aplicar migration 037.**
-7. **Tradução** — 100% das telas em pt-BR; falta só traduzir os templates de e-mail do Supabase Auth (por projeto, no painel — passo do onboarding).
+7. 🟡 **Tradução e-mails Auth** — telas 100% pt-BR. Templates de e-mail Auth prontos pra colar em `plano/onboarding-auth-emails-ptbr.md` (confirmação, reset, magic link, troca de e-mail, OTP). Falta o passo manual: colar no painel de cada projeto (Authentication → Emails) e trocar `[MARCA]`.
 8. **Teste E2E** do tier avançado (n8n), handoff real, e da trava de cobrança.
 9. **Fase 05/06 código** presente (verticais, white-label, billing gate/webhook) mas não exercitado com cliente/processador real.
 
