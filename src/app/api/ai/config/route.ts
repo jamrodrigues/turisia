@@ -117,9 +117,12 @@ export async function POST(request: Request) {
     const isActive = body.is_active === true
     const autoReplyEnabled = body.auto_reply_enabled === true
 
+    // Product default 50 (a sale burns turns fast), hard ceiling 200 —
+    // migration 040 raised the DB CHECK from 20 to 200 to match. Values
+    // >20 used to be silently REJECTED by the old constraint.
     let maxPer = Number(body.auto_reply_max_per_conversation)
-    if (!Number.isFinite(maxPer)) maxPer = 3
-    maxPer = Math.min(20, Math.max(1, Math.floor(maxPer)))
+    if (!Number.isFinite(maxPer)) maxPer = 50
+    maxPer = Math.min(200, Math.max(1, Math.floor(maxPer)))
 
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
 

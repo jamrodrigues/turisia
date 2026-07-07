@@ -1,5 +1,56 @@
 # Status da construção — para revisão do Fable 5
 
+## PLANO P1P2 executado (2026-07-07) — anti-ban + contexto do bot
+
+Todos os 6 itens de `plano/PLANO-P1P2-antiban-contexto.md` implementados.
+Portões: `typecheck` ✅ · `build` ✅ · `test` → **663 pass / 5 falhas
+pré-existentes de locale** (currency + date-utils; +18 testes novos).
+
+- **Item 1 — "Digitando…" + delay humanizado (bot/uazapi):**
+  `uazapiSendPresence` (`uazapi-api.ts`, POST `/message/presence`,
+  best-effort). `providerSendText` ganhou `humanize?` (sender.ts) —
+  emite presença `composing` + espera `humanizedTypingDelayMs` (50ms/char,
+  clamp 1500–6000) ANTES do envio, só no branch uazapi. `engineSendText`
+  (meta-send.ts) repassa `humanize`; ligado em `auto-reply.ts` e
+  `n8n-dispatch.ts`. Inbox/flows/automações inalterados.
+- **Item 2 — Jitter no broadcast:** `UAZAPI_SEND_DELAY_MS` fixo (700)
+  → `uazapiSendDelayMs()` aleatório 900–2400ms (`broadcast/route.ts`).
+- **Item 3 — Teto diário + warm-up:** migration **040** adiciona
+  `whatsapp_config.daily_send_limit` (NULL = sem teto) +
+  `count_outbound_today(account_id)` (conta agent/bot do dia em
+  America/Recife, sem tabela nova). Guarda no broadcast free-text
+  (`broadcastExceedsDailyLimit` → erro `daily_limit_exceeded` 429 em
+  pt-BR). NÃO bloqueia replies 1:1. UI "Teto diário de envios" em
+  `uazapi-config.tsx` + rota `/api/uazapi/config` (POST aceita
+  `daily_send_limit`; update settings-only sem re-inserir o token).
+  Doc de aquecimento em `INSTALL.md §3.7`.
+- **Item 4/5 — Áudio transcrito + placeholder de mídia no contexto:**
+  `buildConversationContext` (`ai/context.ts`) agora inclui `audio`
+  (transcrição `[áudio] …`, descarta placeholder não baixado) e
+  `image/video/document` do CLIENTE (caption prefixado, ou sintético
+  `[cliente enviou uma imagem/um vídeo/um documento]`). Mídia do bot/
+  agente fica de fora (não gasta tokens).
+- **Item 6 — Reset do teto por sessão + teto real:**
+  `maybeResetReplyCountForNewSession` (`ai/dispatch.ts`) zera
+  `ai_reply_count` quando a penúltima mensagem tem >24h (nova "sessão"
+  do dia). Migration 040 sobe o CHECK de `auto_reply_max_per_conversation`
+  de 1..20 → 1..200 (o teto >20 era SILENCIOSAMENTE rejeitado). Rota
+  `/api/ai/config` e UI `ai-config.tsx`: default 50, teto 200. RPC
+  `return_conversation_to_bot` (já zera o count) — verificado: nenhum
+  caminho novo de unmute pula o RPC.
+
+### Pendências para o usuário (P1P2)
+1. **Aplicar migration 040** no painel Supabase (coluna + função +
+   novo CHECK). O código é seguro antes de aplicar (`daily_send_limit`
+   undefined ⇒ guarda pulada; RPC não chamada). Bundle
+   `deploy/setup-banco-completo-001-040.sql` regenerado (038 removido;
+   INSTALL.md atualizado).
+2. **Validação visual do "digitando…"** no WhatsApp real (E2E manual —
+   não simulável sem terceiros; ver checklist do plano).
+3. **Setar o teto diário na UI** (Configurações → uazapi) conforme o
+   aquecimento — em branco = sem limite.
+
+
 Branch: `feat/uazapi-provider` · base: wacrm 0.7.0 (`upstream/main`) · Supabase `jtmdbwtpjqqgmxbhfrkk` (migrations 001–035 aplicadas).
 
 ## O que revisar (ordem sugerida)

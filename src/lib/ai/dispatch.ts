@@ -42,6 +42,14 @@ export async function dispatchInboundToBrain(args: DispatchArgs): Promise<void> 
     const tier = await loadTierConfig(db, accountId)
     if (!tier) return // no config / master off / tier 'off'
 
+    // New "session" of the day: if the customer went quiet for >24h, the
+    // per-conversation reply cap should start fresh so a recurring
+    // customer in an old thread isn't silently muted forever (the cap
+    // never resets on its own — only via return_conversation_to_bot).
+    // Best-effort; runs before the eligibility read so the reset is
+    // visible to the ai_reply_count check that follows.
+    await maybeResetReplyCountForNewSession(db, conversationId)
+
     // Cheap pre-check: if a human owns the thread / handoff is active /
     // cap reached, skip the debounce sleep entirely.
     const { data: conv } = await db
@@ -112,6 +120,56 @@ export async function dispatchInboundToBrain(args: DispatchArgs): Promise<void> 
     }
   } catch (err) {
     console.error('[ai dispatch] failed:', err)
+  }
+}
+
+const SESSION_GAP_MS = 24 * 60 * 60 * 1000 // 24h
+
+/**
+ * Zero `ai_reply_count` when a new conversational "session" begins — the
+ * customer messaged after being quiet for more than 24h.
+ *
+ * The reply cap (auto_reply_max_per_conversation) otherwise never resets
+ * on its own: a recurring customer in a long-lived thread eventually
+ * exhausts it and the bot goes silent on that thread FOREVER (only
+ * return_conversation_to_bot clears it). Treating a >24h gap as a fresh
+ * session gives each day's conversation its own quota.
+ *
+ * The current inbound is already persisted by the time we run, so the
+ * MOST-recent message is it; the SECOND-most-recent is the prior turn.
+ * If that prior turn is >24h old, this inbound opens a new session.
+ * Best-effort — a failure here must not stop the reply pipeline.
+ */
+export async function maybeResetReplyCountForNewSession(
+  db: SupabaseClient,
+  conversationId: string,
+): Promise<void> {
+  try {
+    // Two newest rows: [0] = current inbound, [1] = previous turn.
+    const { data: recent } = await db
+      .from('messages')
+      .select('created_at')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(2)
+    const prev = recent?.[1]
+    if (!prev?.created_at) return // first message in the thread — nothing to reset
+
+    const gap = Date.now() - new Date(prev.created_at).getTime()
+    if (gap <= SESSION_GAP_MS) return
+
+    // Only clears a non-zero count (avoids a needless write on every
+    // fresh thread). The bot's per-conversation quota starts over.
+    await db
+      .from('conversations')
+      .update({ ai_reply_count: 0 })
+      .eq('id', conversationId)
+      .gt('ai_reply_count', 0)
+  } catch (err) {
+    console.warn(
+      '[ai dispatch] session reset check failed:',
+      err instanceof Error ? err.message : err,
+    )
   }
 }
 
