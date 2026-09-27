@@ -71,6 +71,10 @@ export function ContactDetailView({
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
+  const [editCpfCnpj, setEditCpfCnpj] = useState('');
+  const [editEndereco, setEditEndereco] = useState('');
+  const [editPousada, setEditPousada] = useState('');
+  const [editApartamento, setEditApartamento] = useState('');
   const [savingDetails, setSavingDetails] = useState(false);
 
   // Tags tab
@@ -110,6 +114,10 @@ export function ContactDetailView({
       setEditPhone(data.phone);
       setEditEmail(data.email ?? '');
       setEditCompany(data.company ?? '');
+      setEditCpfCnpj(data.cpf_cnpj ?? '');
+      setEditEndereco(data.endereco ?? '');
+      setEditPousada(data.pousada ?? '');
+      setEditApartamento(data.apartamento ?? '');
     }
     setLoading(false);
   }, [contactId, supabase]);
@@ -208,6 +216,10 @@ export function ContactDetailView({
         phone: editPhone.trim(),
         email: editEmail.trim() || null,
         company: editCompany.trim() || null,
+        cpf_cnpj: editCpfCnpj.trim() || null,
+        endereco: editEndereco.trim() || null,
+        pousada: editPousada.trim() || null,
+        apartamento: editApartamento.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', contactId);
@@ -524,6 +536,41 @@ export function ContactDetailView({
                       onChange={(e) => setEditCompany(e.target.value)}
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs">CPF/CNPJ</Label>
+                    <Input
+                      value={editCpfCnpj}
+                      onChange={(e) => setEditCpfCnpj(e.target.value)}
+                      placeholder="Opcional — para nota fiscal por fora"
+                      className="bg-muted border-border text-foreground h-8 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs">Endereço</Label>
+                    <Input
+                      value={editEndereco}
+                      onChange={(e) => setEditEndereco(e.target.value)}
+                      className="bg-muted border-border text-foreground h-8 text-sm"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">Pousada</Label>
+                      <Input
+                        value={editPousada}
+                        onChange={(e) => setEditPousada(e.target.value)}
+                        className="bg-muted border-border text-foreground h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">Apartamento</Label>
+                      <Input
+                        value={editApartamento}
+                        onChange={(e) => setEditApartamento(e.target.value)}
+                        className="bg-muted border-border text-foreground h-8 text-sm"
+                      />
+                    </div>
                   </div>
                   <Button
                     onClick={saveDetails}

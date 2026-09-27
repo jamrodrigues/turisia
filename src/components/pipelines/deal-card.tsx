@@ -1,7 +1,7 @@
 "use client";
 
 import type { Deal, PipelineStage } from "@/types";
-import { Calendar, Check, X } from "lucide-react";
+import { Calendar, Check, Package, X } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 
 interface DealCardProps {
@@ -69,6 +69,13 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
           </span>
         )}
       </div>
+
+      {deal.pacote && (
+        <div className="mt-1.5 flex items-center gap-1 text-xs text-primary">
+          <Package className="h-3 w-3" />
+          <span className="truncate">{deal.pacote.name}</span>
+        </div>
+      )}
 
       {/* Contact row */}
       <div className="mt-2 flex items-center gap-2">

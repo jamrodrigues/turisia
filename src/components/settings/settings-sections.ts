@@ -1,4 +1,5 @@
 import {
+  Building2,
   Coins,
   FileText,
   KeyRound,
@@ -9,6 +10,7 @@ import {
   Tags,
   User,
   UsersRound,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -25,6 +27,8 @@ export const SETTINGS_SECTIONS = [
   'profile',
   'security',
   'appearance',
+  'agency',
+  'payments',
   'whatsapp',
   'templates',
   'fields',
@@ -50,6 +54,8 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   profile: { id: 'profile', label: 'Your profile', icon: User, group: 'account' },
   security: { id: 'security', label: 'Login & security', icon: Shield, group: 'account' },
   appearance: { id: 'appearance', label: 'Appearance', icon: Palette, group: 'account' },
+  agency: { id: 'agency', label: 'Dados da agência', icon: Building2, group: 'workspace' },
+  payments: { id: 'payments', label: 'Pagamentos', icon: Wallet, group: 'workspace' },
   whatsapp: { id: 'whatsapp', label: 'WhatsApp', icon: PlugZap, group: 'workspace' },
   templates: { id: 'templates', label: 'Templates', icon: FileText, group: 'workspace' },
   fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },

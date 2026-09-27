@@ -10,6 +10,8 @@ import { SettingsOverview } from '@/components/settings/settings-overview';
 import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
+import { AgencySettings } from '@/components/settings/agency-settings';
+import { PaymentSettings } from '@/components/settings/payment-settings';
 import { WhatsAppProviderTabs } from '@/components/settings/whatsapp-provider-tabs';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
@@ -55,6 +57,8 @@ export default function SettingsPage() {
     profile: <ProfileForm />,
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
+    agency: <AgencySettings />,
+    payments: <PaymentSettings />,
     whatsapp: <WhatsAppProviderTabs />,
     templates: <TemplateManager />,
     fields: <FieldsAndTagsPanel />,

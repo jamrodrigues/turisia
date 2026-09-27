@@ -10,6 +10,7 @@ import type {
   Conversation,
   Deal,
   DealStatus,
+  Pacote,
   PipelineStage,
   Profile,
 } from "@/types";
@@ -60,11 +61,13 @@ export function DealForm({
   const [currency, setCurrency] = useState(defaultCurrency);
   const [contactId, setContactId] = useState("");
   const [stageId, setStageId] = useState("");
+  const [pacoteId, setPacoteId] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
   const [expectedCloseDate, setExpectedCloseDate] = useState("");
   const [notes, setNotes] = useState("");
 
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [pacotes, setPacotes] = useState<Pacote[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [linkedConversation, setLinkedConversation] =
     useState<Conversation | null>(null);
@@ -89,6 +92,7 @@ export function DealForm({
       // (migration 004: ON DELETE SET NULL). "" means "no selection".
       setContactId(deal.contact_id ?? "");
       setStageId(deal.stage_id);
+      setPacoteId(deal.pacote_id ?? "");
       setAssignedTo(deal.assigned_to ?? "");
       setExpectedCloseDate(deal.expected_close_date ?? "");
       setNotes(deal.notes ?? "");
@@ -98,6 +102,7 @@ export function DealForm({
       setCurrency(defaultCurrency);
       setContactId("");
       setStageId(defaultStageId || stages[0]?.id || "");
+      setPacoteId("");
       setAssignedTo("");
       setExpectedCloseDate("");
       setNotes("");
@@ -110,12 +115,14 @@ export function DealForm({
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [c, p] = await Promise.all([
+      const [c, pac, p] = await Promise.all([
         supabase.from("contacts").select("*").order("name"),
+        supabase.from("pacotes").select("*").eq("is_active", true).order("name"),
         supabase.from("profiles").select("*").order("full_name"),
       ]);
       if (cancelled) return;
       setContacts((c.data ?? []) as Contact[]);
+      setPacotes((pac.data ?? []) as Pacote[]);
       setProfiles((p.data ?? []) as Profile[]);
     })();
     return () => {
@@ -149,6 +156,18 @@ export function DealForm({
     };
   }, [open, contactId, supabase]);
 
+  // Picking a passeio pre-fills title/value as a starting point — the
+  // agent can still edit either afterward (e.g. a group discount).
+  // Only fills fields that are still empty so it never clobbers what
+  // the agent already typed.
+  function handlePacoteChange(id: string) {
+    setPacoteId(id);
+    const p = pacotes.find((x) => x.id === id);
+    if (!p) return;
+    if (!title.trim()) setTitle(p.name);
+    if (!value.trim()) setValue(String(p.price));
+  }
+
   async function handleSave() {
     if (!title.trim() || !contactId || !stageId) {
       toast.error("Título, contato e etapa são obrigatórios");
@@ -163,6 +182,7 @@ export function DealForm({
       contact_id: contactId,
       pipeline_id: pipelineId,
       stage_id: stageId,
+      pacote_id: pacoteId || null,
       assigned_to: assignedTo || null,
       notes: notes.trim() || null,
       expected_close_date: expectedCloseDate || null,
@@ -257,6 +277,22 @@ export function DealForm({
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="grid gap-2">
+              <Label className="text-muted-foreground">Passeio</Label>
+              <select
+                value={pacoteId}
+                onChange={(e) => handlePacoteChange(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              >
+                <option value="">Sem passeio específico (ex.: roteiro personalizado)</option>
+                {pacotes.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="grid gap-2">
               <Label className="text-muted-foreground">Título</Label>
               <Input

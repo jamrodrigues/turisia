@@ -35,13 +35,19 @@ import { GatedButton } from "@/components/ui/gated-button";
 // agent+. The two CTAs gate on different `useCan` capabilities,
 // not on different copy.
 
-// Spec-defined seed — name and color per the product spec.
+// Agency-flavored seed (2026-09-09 — "ajuste os funis pra funis de
+// agência também"): the funnel is for the leads automation didn't
+// close on its own (custom itineraries, groups needing a human
+// touch) — routine bookings never touch a deal at all, they close
+// via the AI/Flow path straight into `reservas`. Name/color per the
+// same product-vision correction as the rest of the "agência, não
+// CRM" pass.
 const SPEC_DEFAULT_STAGES = [
-  { name: "New Lead", color: "#3b82f6", position: 0 }, // blue
-  { name: "Qualified", color: "#eab308", position: 1 }, // yellow
-  { name: "Proposal Sent", color: "#f97316", position: 2 }, // orange
-  { name: "Negotiation", color: "#8b5cf6", position: 3 }, // purple
-  { name: "Won", color: "#22c55e", position: 4 }, // green
+  { name: "Novo Contato", color: "#3b82f6", position: 0 }, // blue
+  { name: "Interessado", color: "#eab308", position: 1 }, // yellow
+  { name: "Orçamento Enviado", color: "#f97316", position: 2 }, // orange
+  { name: "Negociando", color: "#8b5cf6", position: 3 }, // purple
+  { name: "Fechado", color: "#22c55e", position: 4 }, // green
 ];
 
 export default function PipelinesPage() {
@@ -99,7 +105,7 @@ export default function PipelinesPage() {
     async (pipelineId: string) => {
       const { data } = await supabase
         .from("deals")
-        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
+        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*), pacote:pacotes(*)")
         .eq("pipeline_id", pipelineId)
         .order("created_at", { ascending: false });
       return (data ?? []) as Deal[];
@@ -118,7 +124,7 @@ export default function PipelinesPage() {
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, account_id: accountId, name: "Sales Pipeline" })
+      .insert({ user_id: user.id, account_id: accountId, name: "Funil de Vendas" })
       .select()
       .single();
 
@@ -432,14 +438,14 @@ export default function PipelinesPage() {
             <Input
               value={newPipelineName}
               onChange={(e) => setNewPipelineName(e.target.value)}
-              placeholder="ex.: Vendas corporativas"
+              placeholder="ex.: Grupos e eventos"
               className="mt-2 bg-muted border-border text-foreground"
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleCreatePipeline();
               }}
             />
             <p className="mt-2 text-xs text-muted-foreground">
-              As etapas padrão (New Lead → Won) serão criadas automaticamente.
+              As etapas padrão (Novo Contato → Fechado) serão criadas automaticamente.
             </p>
           </div>
           <DialogFooter className="bg-popover/50 border-border">

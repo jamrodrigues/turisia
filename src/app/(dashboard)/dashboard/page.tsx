@@ -18,6 +18,7 @@ import {
   loadPipelineDonut,
   loadResponseTime,
 } from '@/lib/dashboard/queries'
+import { loadAgendaHoje, loadAgenciaMetrics } from '@/lib/dashboard/agencia'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
@@ -25,6 +26,7 @@ import type {
   PipelineDonutData,
   ResponseTimeSummary,
 } from '@/lib/dashboard/types'
+import type { AgendaSlot, AgenciaMetrics } from '@/lib/dashboard/agencia'
 
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
@@ -33,6 +35,8 @@ import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
 import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
+import { AgenciaMetricCards } from '@/components/dashboard/agencia-metric-cards'
+import { AgendaHojeCard } from '@/components/dashboard/agenda-hoje-card'
 
 type RangeDays = 7 | 30 | 90
 
@@ -61,8 +65,23 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
 
+  const [agenciaMetrics, setAgenciaMetrics] = useState<AgenciaMetrics | null>(null)
+  const [agenciaLoading, setAgenciaLoading] = useState(true)
+  const [agendaHoje, setAgendaHoje] = useState<AgendaSlot[] | null>(null)
+  const [agendaLoading, setAgendaLoading] = useState(true)
+
   const loadAll = useCallback(() => {
     const db = createClient()
+
+    void loadAgenciaMetrics(db)
+      .then((m) => setAgenciaMetrics(m))
+      .catch((err) => console.error('[dashboard] agencia metrics failed:', err))
+      .finally(() => setAgenciaLoading(false))
+
+    void loadAgendaHoje(db)
+      .then((s) => setAgendaHoje(s))
+      .catch((err) => console.error('[dashboard] agenda failed:', err))
+      .finally(() => setAgendaLoading(false))
 
     // Kick everything off in parallel. Each block has its own
     // setState + finally so a slow query doesn't hold up faster
@@ -119,16 +138,37 @@ export default function DashboardPage() {
   )
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Painel</h1>
+        <h1 className="text-2xl font-bold text-foreground">Painel da Agência</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Análises em tempo real de conversas, contatos, negócios, disparos e automações.
+          Reservas, ocupação dos passeios e o que o WhatsApp está fechando sozinho.
         </p>
       </div>
 
-      {/* Metric cards */}
+      {/* Agency KPIs — reservas, receita, quanto a IA/fluxo fechou sozinha. */}
+      <AgenciaMetricCards metrics={agenciaMetrics} loading={agenciaLoading} />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <AgendaHojeCard slots={agendaHoje} loading={agendaLoading} />
+        </div>
+        <div className="lg:col-span-2">
+          <QuickActions />
+        </div>
+      </div>
+
+      {/* CRM & atendimento — demoted below the agency-specific section
+          above; still useful (conversas, funil, tempo de resposta) but
+          secondary to "quantas reservas, quanto faturou, o que sai hoje". */}
+      <div>
+        <h2 className="text-lg font-semibold text-foreground">Atendimento &amp; CRM</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Conversas, contatos, negócios e automações.
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {metricsLoading || !metrics ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
@@ -178,9 +218,6 @@ export default function DashboardPage() {
           </>
         )}
       </div>
-
-      {/* Quick actions */}
-      <QuickActions />
 
       {/* Charts row */}
       {/* items-stretch (the grid default) stretches the two columns to
