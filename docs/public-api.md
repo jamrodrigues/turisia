@@ -193,6 +193,19 @@ match returns `200` with the existing contact; a new contact returns
 `201`. The response body is the serialized contact (same shape as the
 list rows above).
 
+`source` is an optional string naming where the lead came from:
+`whatsapp`, `facebook_ads`, `instagram_ads`, `indicacao`, `manual`, or
+`outro`. It's only set on creation (an existing contact's source is
+never overwritten by a later call) and shows up as an "Origem" badge on
+the Contatos page.
+
+**Capturing Facebook/Instagram Ads leads:** point a Meta Lead Ads form
+at this endpoint through Zapier, Make, or n8n (Meta doesn't call
+arbitrary webhooks directly) — map the lead's phone number to `phone`,
+name to `name`, and send `"source": "facebook_ads"` or
+`"source": "instagram_ads"`. No separate integration exists on this
+side; this endpoint is the integration.
+
 ### `GET` / `PATCH /api/v1/contacts/{id}`
 
 Read or update one contact. Scopes: `contacts:read` / `contacts:write`.

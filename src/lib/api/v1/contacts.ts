@@ -16,6 +16,29 @@ import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 /** Row select that embeds the contact's tags for serialization. */
 export const CONTACT_SELECT = '*, contact_tags(tags(*))';
 
+/** Where a contact first came from — set by the caller (e.g. a Meta Lead Ads
+ *  webhook via Zapier/Make sends `facebook_ads`), never guessed. */
+export type ContactSource =
+  | 'whatsapp'
+  | 'facebook_ads'
+  | 'instagram_ads'
+  | 'indicacao'
+  | 'manual'
+  | 'outro';
+
+const CONTACT_SOURCES: readonly ContactSource[] = [
+  'whatsapp',
+  'facebook_ads',
+  'instagram_ads',
+  'indicacao',
+  'manual',
+  'outro',
+];
+
+export function isContactSource(value: unknown): value is ContactSource {
+  return typeof value === 'string' && (CONTACT_SOURCES as readonly string[]).includes(value);
+}
+
 export interface ApiContact {
   id: string;
   phone: string;
@@ -23,6 +46,7 @@ export interface ApiContact {
   email: string | null;
   company: string | null;
   avatar_url: string | null;
+  source: ContactSource | null;
   tags: { id: string; name: string; color: string }[];
   created_at: string;
   updated_at: string;
@@ -50,6 +74,7 @@ export function serializeContact(row: Record<string, unknown>): ApiContact {
     email: (row.email as string | null) ?? null,
     company: (row.company as string | null) ?? null,
     avatar_url: (row.avatar_url as string | null) ?? null,
+    source: isContactSource(row.source) ? row.source : null,
     tags: joins
       .map((j) => j.tags)
       .filter((t): t is NonNullable<RawTagJoin['tags']> => t != null)
@@ -98,6 +123,7 @@ export interface ContactInput {
   name?: string | null;
   email?: string | null;
   company?: string | null;
+  source?: ContactSource | null;
 }
 
 /**
@@ -132,6 +158,7 @@ export async function findOrCreateContact(
       name: input.name ?? sanitized,
       email: input.email ?? null,
       company: input.company ?? null,
+      source: input.source ?? null,
     })
     .select('id')
     .single();

@@ -47,3 +47,23 @@ next-env.d.ts
 .webhook-secret.txt
 supabase/.temp/
 qr-code.png
+
+# Ruflo local tooling/state (not part of the app)
+.claude-flow/
+.agents/
+.swarm/
+.impeccable/
+ruvector.db
+
+# Ruflo plugin scaffold (auto-generated, not project agents)
+.claude/commands/
+.claude/helpers/
+.claude/skills/
+.claude/proven-config.json
+.claude/.proven-config-version
+.claude/agents/browser/
+.claude/agents/consensus/
+.claude/agents/core/
+.claude/agents/sparc/
+.claude/agents/swarm/
+.claude/agents/testing/

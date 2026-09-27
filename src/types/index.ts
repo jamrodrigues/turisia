@@ -49,6 +49,13 @@ export interface Account {
   owner_user_id: string;
   created_at: string;
   updated_at: string;
+  /** Agency business profile (060_agency_profile_and_contact_fiscal.sql) — all optional. */
+  cnpj?: string | null;
+  telefone?: string | null;
+  endereco?: string | null;
+  logo_url?: string | null;
+  pix_key?: string | null;
+  politica_cancelamento?: string | null;
 }
 
 /**
@@ -98,6 +105,14 @@ export interface Contact {
   email?: string;
   company?: string;
   avatar_url?: string;
+  /** CPF or CNPJ — free-text, not format-validated (060). For the agency's own external nota fiscal process. */
+  cpf_cnpj?: string | null;
+  endereco?: string | null;
+  /** Guest's stay location (064) — used by the daily operational manifest. */
+  pousada?: string | null;
+  apartamento?: string | null;
+  /** Lead origin (068) — set by whatever created the contact; null for legacy rows. */
+  source?: 'whatsapp' | 'facebook_ads' | 'instagram_ads' | 'indicacao' | 'manual' | 'outro' | null;
   created_at: string;
   updated_at: string;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
@@ -340,11 +355,189 @@ export interface Deal {
   notes?: string;
   expected_close_date?: string;
   status?: DealStatus;
+  /** Which passeio this deal is for (065) — nullable: not every deal (custom itinerary requests) maps to one catalog package. */
+  pacote_id?: string | null;
   created_at: string;
   updated_at?: string;
   contact?: Contact;
   stage?: PipelineStage;
   assignee?: Profile;
+  pacote?: Pacote;
+}
+
+export interface Pacote {
+  id: string;
+  account_id: string;
+  created_by?: string | null;
+  name: string;
+  category?: string | null;
+  description?: string | null;
+  price: number;
+  duration_minutes?: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PacoteHorario {
+  id: string;
+  pacote_id: string;
+  hora_saida: string;
+  hora_volta?: string | null;
+  capacidade_pessoas: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export type ReservaStatus = 'pendente' | 'confirmada' | 'cancelada';
+
+export type PagamentoStatus = 'nao_iniciado' | 'pendente' | 'pago' | 'falhou';
+
+export interface Reserva {
+  id: string;
+  account_id: string;
+  pacote_id: string;
+  pacote_horario_id?: string | null;
+  contact_id?: string | null;
+  conversation_id?: string | null;
+  data: string;
+  quantidade_pessoas: number;
+  status: ReservaStatus;
+  voucher_url?: string | null;
+  /** Payment tracking (062_payment_config_and_reserva_fields.sql) — Mercado Pago Pix. */
+  pagamento_status?: PagamentoStatus;
+  mp_order_id?: string | null;
+  mp_payment_id?: string | null;
+  pagamento_valor?: number | null;
+  pagamento_pix_copia_cola?: string | null;
+  paid_at?: string | null;
+  created_by?: string | null;
+  saida_operacional_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  pacote?: Pacote;
+  pacote_horario?: PacoteHorario;
+  contact?: Contact;
+}
+
+export interface Motorista {
+  id: string;
+  account_id: string;
+  nome: string;
+  telefone?: string | null;
+  cnh?: string | null;
+  observacoes?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Guia {
+  id: string;
+  account_id: string;
+  nome: string;
+  telefone?: string | null;
+  credenciais?: string | null;
+  observacoes?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type VeiculoStatus = 'disponivel' | 'manutencao' | 'inativo';
+
+export interface Veiculo {
+  id: string;
+  account_id: string;
+  modelo: string;
+  placa?: string | null;
+  capacidade: number;
+  motorista_padrao_id?: string | null;
+  status: VeiculoStatus;
+  observacoes?: string | null;
+  created_at: string;
+  updated_at: string;
+  motorista_padrao?: Motorista;
+}
+
+export interface SaidaOperacional {
+  id: string;
+  account_id: string;
+  pacote_id: string;
+  pacote_horario_id?: string | null;
+  data: string;
+  veiculo_id?: string | null;
+  motorista_id?: string | null;
+  guia_id?: string | null;
+  observacoes?: string | null;
+  created_at: string;
+  updated_at: string;
+  pacote?: Pacote;
+  pacote_horario?: PacoteHorario;
+  veiculo?: Veiculo;
+  motorista?: Motorista;
+  guia?: Guia;
+  reservas?: Reserva[];
+}
+
+/** 066_financeiro.sql — manual ledger (v1: no bank-feed import/reconciliation). */
+export type ContaFinanceiraTipo = 'banco' | 'cartao' | 'maquininha' | 'caixa';
+
+export interface ContaFinanceira {
+  id: string;
+  account_id: string;
+  nome: string;
+  tipo: ContaFinanceiraTipo;
+  saldo_inicial: number;
+  is_active: boolean;
+  observacoes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type LancamentoTipo = 'entrada' | 'saida';
+export type LancamentoCategoria =
+  | 'reserva'
+  | 'despesa_operacional'
+  | 'taxa'
+  | 'salario'
+  | 'outro';
+
+export interface LancamentoFinanceiro {
+  id: string;
+  account_id: string;
+  conta_id: string;
+  reserva_id?: string | null;
+  tipo: LancamentoTipo;
+  categoria: LancamentoCategoria;
+  valor: number;
+  descricao?: string | null;
+  data: string;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  conta?: ContaFinanceira;
+}
+
+/** 067_tarefas.sql — internal staff tasks/reminders (not the customer-facing AI/Flow automations). */
+export type TarefaStatus = 'pendente' | 'concluida';
+
+export interface Tarefa {
+  id: string;
+  account_id: string;
+  titulo: string;
+  descricao?: string | null;
+  prazo?: string | null;
+  status: TarefaStatus;
+  responsavel_id?: string | null;
+  contact_id?: string | null;
+  reserva_id?: string | null;
+  created_by?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  responsavel?: { id: string; full_name: string } | null;
+  contact?: Contact | null;
 }
 
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';

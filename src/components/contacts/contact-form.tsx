@@ -52,6 +52,10 @@ export function ContactForm({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
+  const [cpfCnpj, setCpfCnpj] = useState('');
+  const [endereco, setEndereco] = useState('');
+  const [pousada, setPousada] = useState('');
+  const [apartamento, setApartamento] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Duplicate-phone detection for NEW contacts. `exact` (same digits)
@@ -73,6 +77,10 @@ export function ContactForm({
       setPhone(contact?.phone ?? '');
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
+      setCpfCnpj(contact?.cpf_cnpj ?? '');
+      setEndereco(contact?.endereco ?? '');
+      setPousada(contact?.pousada ?? '');
+      setApartamento(contact?.apartamento ?? '');
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       setDupMatch(null);
       fetchTags();
@@ -154,6 +162,10 @@ export function ContactForm({
             phone: phone.trim(),
             email: email.trim() || null,
             company: company.trim() || null,
+            cpf_cnpj: cpfCnpj.trim() || null,
+            endereco: endereco.trim() || null,
+            pousada: pousada.trim() || null,
+            apartamento: apartamento.trim() || null,
             updated_at: new Date().toISOString(),
           })
           .eq('id', contactId);
@@ -168,6 +180,11 @@ export function ContactForm({
             phone: phone.trim(),
             email: email.trim() || null,
             company: company.trim() || null,
+            cpf_cnpj: cpfCnpj.trim() || null,
+            endereco: endereco.trim() || null,
+            pousada: pousada.trim() || null,
+            apartamento: apartamento.trim() || null,
+            source: 'manual',
           })
           .select('id')
           .single();
@@ -322,6 +339,59 @@ export function ContactForm({
               placeholder="Acme Ltda."
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-cpf-cnpj" className="text-muted-foreground">
+              CPF/CNPJ
+            </Label>
+            <Input
+              id="cf-cpf-cnpj"
+              value={cpfCnpj}
+              onChange={(e) => setCpfCnpj(e.target.value)}
+              placeholder="Opcional — para nota fiscal por fora"
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-endereco" className="text-muted-foreground">
+              Endereço
+            </Label>
+            <Input
+              id="cf-endereco"
+              value={endereco}
+              onChange={(e) => setEndereco(e.target.value)}
+              placeholder="Opcional"
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="cf-pousada" className="text-muted-foreground">
+                Pousada
+              </Label>
+              <Input
+                id="cf-pousada"
+                value={pousada}
+                onChange={(e) => setPousada(e.target.value)}
+                placeholder="Opcional"
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="cf-apartamento" className="text-muted-foreground">
+                Apartamento
+              </Label>
+              <Input
+                id="cf-apartamento"
+                value={apartamento}
+                onChange={(e) => setApartamento(e.target.value)}
+                placeholder="Opcional"
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
           </div>
 
           <div className="space-y-2">

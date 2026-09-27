@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { createClient } from "@/lib/supabase/client";
-import { Sidebar } from "@/components/layout/sidebar";
-import { Header } from "@/components/layout/header";
+import { AppHeader } from "@/components/layout/app-header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
 import { AccountBlocked } from "@/components/billing/account-blocked";
 
@@ -20,6 +19,7 @@ const ADMIN_ONLY_PREFIXES = [
   "/flows",
   "/agents",
   "/broadcasts",
+  "/financeiro",
 ];
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
@@ -30,11 +30,6 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const { user, loading, accountRole, profileLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-
-  // Sidebar drawer state — only used on mobile. On lg+ the sidebar is
-  // always visible and this stays at `false` (ignored by the component).
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -97,16 +92,13 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   if (billingBlock) return <AccountBlocked reason={billingBlock} />;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}
       <PresenceHeartbeat />
-      <Sidebar open={sidebarOpen} onClose={closeSidebar} />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header onOpenSidebar={() => setSidebarOpen(true)} />
-        {/* Thinner horizontal padding on mobile so cards have room to breathe. */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
-      </div>
+      <AppHeader />
+      {/* Thinner horizontal padding on mobile so cards have room to breathe. */}
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
     </div>
   );
 }

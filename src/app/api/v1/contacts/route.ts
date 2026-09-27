@@ -22,6 +22,7 @@ import {
   setContactTags,
   getContactById,
   resolveAuditUserId,
+  isContactSource,
   ContactError,
 } from '@/lib/api/v1/contacts';
 
@@ -110,6 +111,14 @@ export async function POST(request: Request) {
       return fail('bad_request', "'phone' is required", 400);
     }
 
+    if (body.source !== undefined && !isContactSource(body.source)) {
+      return fail(
+        'bad_request',
+        "'source' must be one of: whatsapp, facebook_ads, instagram_ads, indicacao, manual, outro",
+        400
+      );
+    }
+
     const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
 
     const { id, created } = await findOrCreateContact(
@@ -121,6 +130,7 @@ export async function POST(request: Request) {
         name: typeof body.name === 'string' ? body.name : undefined,
         email: typeof body.email === 'string' ? body.email : undefined,
         company: typeof body.company === 'string' ? body.company : undefined,
+        source: isContactSource(body.source) ? body.source : undefined,
       }
     );
 

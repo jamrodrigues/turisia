@@ -217,6 +217,19 @@ html[data-theme="rose"] {
   --sidebar-ring: oklch(0.645 0.22 16);
 }
 
+html[data-theme="petrol"] {
+  --primary: oklch(0.451 0.047 195.6);
+  --primary-foreground: oklch(1 0 0);
+  --primary-hover: oklch(0.344 0.036 195.6);
+  --primary-soft: oklch(0.451 0.047 195.6 / 0.12);
+  --primary-soft-2: oklch(0.451 0.047 195.6 / 0.2);
+  --ring: oklch(0.451 0.047 195.6);
+  --chart-1: oklch(0.451 0.047 195.6);
+  --sidebar-primary: oklch(0.451 0.047 195.6);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-ring: oklch(0.451 0.047 195.6);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

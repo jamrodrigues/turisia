@@ -19,11 +19,12 @@ export const THEME_IDS = [
   "cobalt",
   "amber",
   "rose",
+  "petrol",
 ] as const;
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
-export const DEFAULT_THEME: ThemeId = "violet";
+export const DEFAULT_THEME: ThemeId = "petrol";
 
 export const STORAGE_KEY = "wacrm.theme";
 
@@ -43,7 +44,7 @@ export const MODES = ["light", "dark"] as const;
 
 export type Mode = (typeof MODES)[number];
 
-export const DEFAULT_MODE: Mode = "dark";
+export const DEFAULT_MODE: Mode = "light";
 
 export const MODE_STORAGE_KEY = "wacrm.mode";
 
@@ -96,6 +97,12 @@ export const THEMES: ReadonlyArray<ThemeMeta> = [
     name: "Rose",
     tagline: "Bold and modern — D2C, creator-economy, lifestyle.",
     swatch: "oklch(0.645 0.22 16)",
+  },
+  {
+    id: "petrol",
+    name: "Petrol",
+    tagline: "O padrão da agência — sóbrio, alinhado ao que o mercado já usa.",
+    swatch: "oklch(0.451 0.047 195.6)",
   },
 ];
 
