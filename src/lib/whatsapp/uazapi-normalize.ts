@@ -52,6 +52,10 @@ export interface UazapiNormalizedEvent {
   /** True when the message carries media that must be fetched via
    *  POST /message/download {id: waMessageId}. */
   hasMedia: boolean
+  /** ID of the tapped button / list row (`buttonOrListid` on the wire).
+   *  Empty on plain text. Lets flows match native menu taps by reply_id
+   *  instead of guessing from the (often empty) text field. */
+  interactiveReplyId: string | null
   /** Why kind === 'ignored' (for debug logs). */
   ignoredReason?: string
 }
@@ -148,6 +152,7 @@ export function normalizeUazapiWebhook(raw: unknown): UazapiNormalizedEvent {
     contentType: 'text',
     text: null,
     hasMedia: false,
+    interactiveReplyId: null,
     ignoredReason: reason,
   })
 
@@ -213,5 +218,6 @@ export function normalizeUazapiWebhook(raw: unknown): UazapiNormalizedEvent {
     contentType: kindInfo.contentType,
     text,
     hasMedia: kindInfo.hasMedia,
+    interactiveReplyId: firstString(msg, ['buttonOrListid']) || null,
   }
 }

@@ -62,7 +62,13 @@ export function buildMediaPath(
 }
 
 export interface UploadAccountMediaResult {
-  /** Public URL Meta can fetch at send time. */
+  /**
+   * URL na FORMA pública do objeto. Desde a migration 054 os buckets são
+   * privados, então esta URL não abre sozinha — ela é o IDENTIFICADOR
+   * DURÁVEL que gravamos no banco. Quem for exibir ou entregar a mídia a
+   * um terceiro passa por `signMediaUrl` / `useSignedMediaUrl`
+   * (src/lib/storage/media-url.ts) para obter uma URL assinada.
+   */
   publicUrl: string;
   /** Storage object path (account-scoped). */
   path: string;

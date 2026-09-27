@@ -32,10 +32,12 @@ import {
 } from './meta-api'
 import {
   uazapiSendMedia,
+  uazapiSendMenu,
   uazapiSendPresence,
   uazapiSendReaction,
   uazapiSendText,
   type UazapiContext,
+  type UazapiMenuChoice,
 } from './uazapi-api'
 import { decrypt } from './encryption'
 
@@ -188,10 +190,17 @@ export async function providerSendReaction(
 // Interactive buttons / lists
 // ============================================================
 //
-// uazapi has no stable equivalent of Meta's interactive messages, so we
-// degrade to a numbered text menu. The customer replies with the number
-// (or the option text); flows that depend on exact button-id matching
-// should use keyword branches for uazapi accounts. The rendered shape:
+// On uazapi we first try the native interactive menu (POST /send/menu),
+// which renders real tappable buttons / list rows and echoes the tapped
+// option's id back in the webhook — so id-based flow branches keep
+// working just like on Meta.
+//
+// Native interactive menus are officially unstable on unofficial WhatsApp
+// ("may be removed at any time"), so every attempt falls back to the
+// legacy numbered text menu on any error. The customer then replies with
+// the number (or the option text); flows that depend on exact button-id
+// matching should still keep keyword branches for uazapi accounts. The
+// fallback shape:
 //
 //   <headerText>
 //
@@ -201,6 +210,45 @@ export async function providerSendReaction(
 //   2. Option B
 //
 //   <footerText>
+
+/** uazapi/WhatsApp reply-button cap; more options degrade to a list. */
+const UAZAPI_MENU_BUTTON_LIMIT = 3
+
+/**
+ * uazapi's button menu has no dedicated header field, so fold Meta's
+ * plain-text header into the body as a bold first line (matching the
+ * numbered-text fallback, which does the same).
+ */
+function foldHeaderIntoBody(bodyText: string, headerText?: string): string {
+  return headerText ? `*${headerText}*\n\n${bodyText}` : bodyText
+}
+
+/**
+ * Try the native uazapi menu; on any failure, log and fall back to
+ * sending the pre-rendered numbered text. Keeps the old behavior fully
+ * available for servers/versions that reject /send/menu.
+ */
+async function uazapiMenuWithFallback(args: {
+  ctx: UazapiContext
+  to: string
+  kind: 'button' | 'list'
+  text: string
+  choices: UazapiMenuChoice[]
+  footerText?: string
+  listButton?: string
+  fallbackText: string
+}): Promise<{ messageId: string }> {
+  const { ctx, to, kind, text, choices, footerText, listButton, fallbackText } = args
+  try {
+    return await uazapiSendMenu({ ctx, to, kind, text, choices, footerText, listButton })
+  } catch (err) {
+    console.warn(
+      `[uazapi] native /send/menu (${kind}) failed, falling back to numbered text:`,
+      err instanceof Error ? err.message : err,
+    )
+    return uazapiSendText({ ctx, to, text: fallbackText })
+  }
+}
 
 export function renderButtonsAsText(args: {
   bodyText: string
@@ -253,10 +301,17 @@ export async function providerSendInteractiveButtons(
 ): Promise<{ messageId: string }> {
   const { config, to, ...rest } = args
   if (providerOf(config) === 'uazapi') {
-    return uazapiSendText({
+    // ≤3 options render as reply buttons; more degrade to a native list.
+    const useList = rest.buttons.length > UAZAPI_MENU_BUTTON_LIMIT
+    return uazapiMenuWithFallback({
       ctx: uazapiCtx(config),
       to,
-      text: renderButtonsAsText(rest),
+      kind: useList ? 'list' : 'button',
+      text: foldHeaderIntoBody(rest.bodyText, rest.headerText),
+      choices: rest.buttons.map((b) => ({ label: b.title, id: b.id })),
+      footerText: rest.footerText,
+      listButton: useList ? rest.headerText || 'Menu' : undefined,
+      fallbackText: renderButtonsAsText(rest),
     })
   }
   return sendInteractiveButtons({
@@ -282,10 +337,22 @@ export async function providerSendInteractiveList(
 ): Promise<{ messageId: string }> {
   const { config, to, buttonLabel, ...rest } = args
   if (providerOf(config) === 'uazapi') {
-    return uazapiSendText({
+    return uazapiMenuWithFallback({
       ctx: uazapiCtx(config),
       to,
-      text: renderListAsText(rest),
+      kind: 'list',
+      text: foldHeaderIntoBody(rest.bodyText, rest.headerText),
+      choices: rest.sections.flatMap((section) =>
+        section.rows.map((row) => ({
+          label: row.title,
+          id: row.id,
+          description: row.description,
+          section: section.title,
+        })),
+      ),
+      footerText: rest.footerText,
+      listButton: buttonLabel,
+      fallbackText: renderListAsText(rest),
     })
   }
   return sendInteractiveList({

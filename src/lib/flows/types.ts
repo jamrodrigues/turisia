@@ -173,6 +173,84 @@ export interface SetTagNodeConfig {
   next_node_key: string;
 }
 
+/**
+ * Writes a literal value into `flow_runs.vars[var_key]` and
+ * auto-advances. No customer interaction — used to encode a choice
+ * made via a `send_list`/`send_buttons` tap (which only carries a
+ * `next_node_key`, not a var) into run state: route each button/row to
+ * its own `set_var` node, then merge back to a shared next node. See
+ * the "Fechar {pacote}" flow pattern in
+ * turia_agenda_reservas_schema.md's closing section.
+ */
+export interface SetVarNodeConfig {
+  var_key: string;
+  value: string;
+  next_node_key: string;
+}
+
+/**
+ * Books a package via the `criar_reserva()` RPC
+ * (058_pacote_horarios_reservas.sql) — row-locked, capacity-checked.
+ * This is the ONLY node that may create a `reservas` row; there is
+ * deliberately no generic "insert row" node type.
+ *
+ * `pacote_id` is fixed at author time (one flow closes one package —
+ * matches "Fechar Buggy" being a distinct flow from "Fechar Mergulho").
+ * `pacote_horario_id`, `data`, and `quantidade_pessoas` are read from
+ * vars captured earlier in the run (via `set_var` / `collect_input`),
+ * so the same node config works regardless of how those vars were
+ * collected.
+ */
+export interface CreateReservationNodeConfig {
+  pacote_id: string;
+  /** vars key holding the chosen pacote_horarios.id, or empty string for "no fixed slot". */
+  pacote_horario_var_key: string;
+  /** vars key holding the date, as YYYY-MM-DD. */
+  data_var_key: string;
+  /** vars key holding the party size as a numeric string. */
+  quantidade_var_key: string;
+  /** Node to advance to on success. `vars.reserva_id` is set for downstream nodes. */
+  success_next: string;
+  /** Node to advance to on failure (no vagas, bad var). `vars.reserva_erro` is set. */
+  failure_next: string;
+}
+
+/**
+ * Charges the reservation via Mercado Pago Pix
+ * (062_payment_config_and_reserva_fields.sql,
+ * src/lib/payments/mercadopago.ts) and SUSPENDS the run — unlike every
+ * other node, it does NOT resume from the customer's next WhatsApp
+ * reply. It resumes when Mercado Pago's webhook confirms the payment
+ * (`resumeFlowRunAfterPayment` in engine.ts, called from
+ * src/app/api/payments/webhook/route.ts). There is no timeout/expiry
+ * branch in v1 — an abandoned Pix charge leaves the run parked here
+ * indefinitely; `failure_next` only covers a charge that couldn't be
+ * CREATED (payments not configured, Mercado Pago API error), not one
+ * the customer never paid.
+ */
+export interface CreatePaymentNodeConfig {
+  /** vars key holding the reserva id from a prior create_reservation node. Defaults to "reserva_id". */
+  reserva_var_key?: string;
+  /** Node to advance to once the webhook confirms payment. */
+  success_next: string;
+  /** Node to advance to if the charge itself could not be created. */
+  failure_next: string;
+}
+
+/**
+ * Renders a voucher PDF for a reservation created earlier in the run
+ * and sends it as a WhatsApp document, then auto-advances. Combines
+ * generate+upload+send in one node (rather than a generic send_media
+ * pointed at an interpolated URL) because `send_media.media_url` isn't
+ * var-interpolated today and a voucher's URL doesn't exist until this
+ * node runs it — see `src/lib/flows/voucher.ts`.
+ */
+export interface SendVoucherNodeConfig {
+  /** vars key holding the reserva id from a prior create_reservation node. Defaults to "reserva_id". */
+  reserva_var_key?: string;
+  next_node_key: string;
+}
+
 // Terminal nodes carry no config — they just stop the run.
 export type EndNodeConfig = Record<string, never>;
 
@@ -193,6 +271,10 @@ export type FlowNodeConfig =
   | { node_type: "collect_input"; config: CollectInputNodeConfig }
   | { node_type: "condition"; config: ConditionNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }
+  | { node_type: "set_var"; config: SetVarNodeConfig }
+  | { node_type: "create_reservation"; config: CreateReservationNodeConfig }
+  | { node_type: "create_payment"; config: CreatePaymentNodeConfig }
+  | { node_type: "send_voucher"; config: SendVoucherNodeConfig }
   | { node_type: "handoff"; config: HandoffNodeConfig }
   | { node_type: "end"; config: EndNodeConfig };
 
@@ -237,6 +319,8 @@ export interface FlowRow {
   trigger_type: "keyword" | "first_inbound_message" | "manual";
   trigger_config: KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
   entry_node_id: string | null;
+  /** Admin-set topic slug for AI-driven direct entry (061) — e.g. 'buggy'. Null = not AI-triggerable, keyword/manual entry only. */
+  ai_topic: string | null;
   fallback_policy: FlowFallbackPolicy;
   execution_count: number;
   last_executed_at: string | null;

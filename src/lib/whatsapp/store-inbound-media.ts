@@ -51,8 +51,14 @@ function extFor(contentType: string): string {
 }
 
 /**
- * Fetch `sourceUrl` and upload it to `chat-media`, returning the public
- * URL — or null on any failure (caller falls back to `sourceUrl`).
+ * Fetch `sourceUrl` and upload it to `chat-media`, returning the URL on
+ * its public FORM — ou null em qualquer falha (o chamador cai de volta
+ * para `sourceUrl`).
+ *
+ * Desde a migration 054 o bucket é privado: essa URL é o identificador
+ * durável gravado em `messages.media_url`, não um link que abre sozinho.
+ * Exibição e entrega a terceiros passam por `signMediaUrl` /
+ * `useSignedMediaUrl` (src/lib/storage/media-url.ts).
  */
 export async function storeInboundMediaToBucket(
   db: SupabaseClient,

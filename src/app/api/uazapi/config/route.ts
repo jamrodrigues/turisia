@@ -3,7 +3,11 @@ import crypto from 'crypto'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
-import { uazapiInstanceStatus, uazapiSetWebhook } from '@/lib/whatsapp/uazapi-api'
+import { uazapiInstanceStatus, uazapiSetWebhook, escapeIlikeExactMatch } from '@/lib/whatsapp/uazapi-api'
+import {
+  buildUazapiWebhookUrl,
+  maskWebhookSecret,
+} from '@/lib/whatsapp/uazapi-webhook-url'
 
 /**
  * uazapi provider configuration (admin/operator only — the settings
@@ -69,12 +73,20 @@ export async function GET() {
       return NextResponse.json({ configured: false, reason: 'no_config' })
     }
 
-    // The operator needs the full webhook URL (with secret) to paste
-    // into the uazapi panel — this is an authenticated admin surface.
+    // The operator sees WHERE the webhook points, never the secret
+    // itself: it is masked to `***` before it leaves the server (same
+    // rule as the repoint-webhook route). The browser has no use for
+    // the plaintext — POST /api/uazapi/config already configures the
+    // webhook on the uazapi server automatically, and the repoint
+    // action re-applies it — so echoing it back would only widen the
+    // exposure surface (XSS, logs, screenshots, shoulder-surfing).
     let webhookUrl: string | null = null
     try {
       const secret = decrypt(config.uazapi_webhook_secret)
-      webhookUrl = `${siteUrl()}/api/uazapi/webhook?secret=${secret}`
+      webhookUrl = maskWebhookSecret(
+        buildUazapiWebhookUrl(siteUrl(), secret),
+        secret,
+      )
     } catch {
       webhookUrl = null
     }
@@ -191,7 +203,7 @@ export async function POST(request: Request) {
     const { data: claimed } = await supabaseAdmin()
       .from('whatsapp_config')
       .select('account_id')
-      .eq('uazapi_instance_name', instance_name)
+      .ilike('uazapi_instance_name', escapeIlikeExactMatch(instance_name))
       .neq('account_id', accountId)
       .maybeSingle()
     if (claimed) {
@@ -258,7 +270,7 @@ export async function POST(request: Request) {
     // Auto-configure the instance's webhook on the uazapi server —
     // no manual panel step. Best-effort: if it fails (older server
     // without /webhook), the UI still shows the URL to paste by hand.
-    const webhookUrl = `${siteUrl()}/api/uazapi/webhook?secret=${webhookSecret}`
+    const webhookUrl = buildUazapiWebhookUrl(siteUrl(), webhookSecret)
     let webhookConfigured = false
     try {
       await uazapiSetWebhook(
@@ -273,9 +285,15 @@ export async function POST(request: Request) {
       )
     }
 
+    // O segredo NÃO volta ao navegador, mesma regra do GET e do
+    // repoint-webhook. A UI não lê este campo (ela chama refresh() e
+    // mostra a URL mascarada do GET) — ele fica só para diagnóstico do
+    // operador, então mascarado basta. Quando o auto-setup falha, o
+    // caminho de recuperação é o botão de repontar webhook, que reaplica
+    // a URL no servidor uazapi sem ninguém precisar ver o segredo.
     return NextResponse.json({
       ok: true,
-      webhook_url: webhookUrl,
+      webhook_url: maskWebhookSecret(webhookUrl, webhookSecret),
       webhook_configured: webhookConfigured,
     })
   } catch (err) {

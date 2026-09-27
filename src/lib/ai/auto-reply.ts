@@ -2,10 +2,15 @@ import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
+import { retrieveActivePacotes, matchPacoteMedia } from './pacotes'
+import { retrieveBookableTopics } from './booking-topics'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { latestUserMessage } from './query'
-import { engineSendText } from '@/lib/flows/meta-send'
+import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
+import { startFlowByAiTopic } from '@/lib/flows/engine'
+import { signMediaUrl } from '@/lib/storage/media-url.server'
+import { MEDIA_URL_TTL } from '@/lib/storage/media-url'
 import { sendWithRetry } from './send-retry'
 import { recordAiUsage } from './usage'
 
@@ -89,13 +94,24 @@ export async function dispatchInboundToAiReply(
       latestUserMessage(messages),
     )
 
+    // Ground the reply in the account's tour/package catalog, if any
+    // (best-effort; empty for accounts that don't use pacotes).
+    const pacotes = await retrieveActivePacotes(db, accountId)
+
+    // Which categories have an automated-closing Flow wired up
+    // (061) — tells the model when it's allowed to hand off into one
+    // instead of just chatting about the package.
+    const bookableTopics = await retrieveBookableTopics(db, accountId)
+
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      pacotes,
+      bookableTopics,
     })
 
-    const { text, handoff, usage } = await generateReply({
+    const { text, handoff, bookingTopic, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -112,7 +128,35 @@ export async function dispatchInboundToAiReply(
       outputTokens: usage?.outputTokens ?? 0,
     })
 
-    if (handoff || !text) {
+    // Booking confirmed — hand off to the automated-closing Flow
+    // instead of sending this as a chat reply. Defensive re-check
+    // against bookableTopics: only ever trust a topic we actually
+    // offered the model, never whatever it emitted.
+    if (bookingTopic && bookableTopics.includes(bookingTopic)) {
+      const result = await startFlowByAiTopic({
+        accountId,
+        userId: configOwnerUserId,
+        contactId,
+        conversationId,
+        message: {
+          kind: 'text',
+          text: latestUserMessage(messages),
+          // Synthetic — this isn't a real inbound Meta message. The
+          // engine's real protection against a double-start is the
+          // active-run check + the DB's partial unique index, not
+          // this id (see startFlowByAiTopic).
+          meta_message_id: `ai-intent-${conversationId}-${Date.now()}`,
+        },
+        topic: bookingTopic,
+      })
+      if (result.consumed) return
+      // No matching active flow, or a run was already active for this
+      // contact (race) — fall through to the same "stand down, let a
+      // human see it" behavior as handoff, rather than silently
+      // dropping a customer who just said yes to buying something.
+    }
+
+    if (bookingTopic || handoff || !text) {
       // The model can't (or shouldn't) answer — stop auto-replying on
       // this thread and leave the inbound unanswered so it surfaces in
       // the inbox for a human. Sticky until an admin re-enables.
@@ -149,6 +193,29 @@ export async function dispatchInboundToAiReply(
         humanize: true,
       }),
     )
+
+    // Best-effort follow-up: if the customer's message clearly pointed
+    // at ONE specific active package, send its cover photo/video right
+    // after the text. Own try/catch — a media-send hiccup must not
+    // undo the text reply that already landed.
+    try {
+      const media = await matchPacoteMedia(db, accountId, latestUserMessage(messages))
+      if (media) {
+        const signedLink = await signMediaUrl(media.url, MEDIA_URL_TTL.outboundSend)
+        if (signedLink) {
+          await engineSendMedia({
+            accountId,
+            userId: configOwnerUserId,
+            conversationId,
+            contactId,
+            kind: media.mediaType,
+            link: signedLink,
+          })
+        }
+      }
+    } catch (err) {
+      console.error('[ai auto-reply] pacote media send failed:', err)
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }

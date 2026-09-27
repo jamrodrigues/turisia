@@ -32,6 +32,7 @@ import {
 } from '@/lib/whatsapp/sender';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { signMediaUrl, MEDIA_URL_TTL } from '@/lib/storage/media-url.server';
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -227,8 +228,11 @@ export async function sendMessageToConversation(
     );
   }
 
-  // WhatsApp config, account-scoped.
-  const { data: config, error: configError } = await db
+  // WhatsApp config, account-scoped. Read with the admin client: the
+  // whatsapp_config RLS is admin-only (it holds encrypted tokens), but
+  // any member of the account may send — the caller already
+  // authenticated and scoped accountId, so we still filter by it.
+  const { data: config, error: configError } = await supabaseAdmin()
     .from('whatsapp_config')
     .select('*')
     .eq('account_id', accountId)
@@ -346,7 +350,11 @@ export async function sendMessageToConversation(
         config,
         to: phone,
         kind: messageType as MediaKind,
-        link: mediaUrl!,
+        // O provedor (Meta/uazapi) baixa este link do lado dele, sem
+        // sessão. Com os buckets privados (migration 054) ele precisa ser
+        // assinado. O que persistimos em messages.media_url continua sendo
+        // `mediaUrl` (a forma durável) — ver o INSERT mais abaixo.
+        link: await signMediaUrl(mediaUrl!, MEDIA_URL_TTL.outboundSend),
         caption: contentText || undefined,
         filename: filename || undefined,
         contextMessageId,

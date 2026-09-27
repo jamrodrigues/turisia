@@ -6,6 +6,7 @@ import {
   isSuspending,
   isTerminal,
   evaluateConditionPredicate,
+  parseFlexibleDateToISO,
 } from "./engine";
 
 describe("matchReplyId", () => {
@@ -150,6 +151,9 @@ describe("node classification helpers", () => {
     expect(isAutoAdvancing("send_media")).toBe(true);
     expect(isAutoAdvancing("condition")).toBe(true);
     expect(isAutoAdvancing("set_tag")).toBe(true);
+    expect(isAutoAdvancing("set_var")).toBe(true);
+    expect(isAutoAdvancing("create_reservation")).toBe(true);
+    expect(isAutoAdvancing("send_voucher")).toBe(true);
     expect(isAutoAdvancing("send_buttons")).toBe(false);
     expect(isAutoAdvancing("send_list")).toBe(false);
     expect(isAutoAdvancing("collect_input")).toBe(false);
@@ -295,5 +299,45 @@ describe("evaluateConditionPredicate", () => {
         configValue: "anything",
       }),
     ).toBe(false);
+  });
+});
+
+describe("parseFlexibleDateToISO", () => {
+  const NOW = new Date(2026, 8, 8); // 2026-09-08 (month is 0-indexed)
+
+  it("passes through a valid ISO date unchanged", () => {
+    expect(parseFlexibleDateToISO("2026-09-09", NOW)).toBe("2026-09-09");
+  });
+
+  it("rejects an ISO date that isn't a real calendar day", () => {
+    expect(parseFlexibleDateToISO("2026-02-30", NOW)).toBeNull();
+  });
+
+  it("parses DD/MM with no year, assuming this year", () => {
+    // 09/09 is still ahead of "today" (2026-09-08) → this year.
+    expect(parseFlexibleDateToISO("09/09", NOW)).toBe("2026-09-09");
+  });
+
+  it("rolls DD/MM to next year when that day already passed this year", () => {
+    // 01/01 has already passed relative to 2026-09-08 → 2027.
+    expect(parseFlexibleDateToISO("01/01", NOW)).toBe("2027-01-01");
+  });
+
+  it("parses DD/MM/YYYY", () => {
+    expect(parseFlexibleDateToISO("25/12/2026", NOW)).toBe("2026-12-25");
+  });
+
+  it("parses DD/MM/YY as 20YY", () => {
+    expect(parseFlexibleDateToISO("25/12/26", NOW)).toBe("2026-12-25");
+  });
+
+  it("rejects a DD/MM that isn't a real calendar day", () => {
+    expect(parseFlexibleDateToISO("31/04", NOW)).toBeNull();
+  });
+
+  it("returns null for text that isn't a date at all", () => {
+    expect(parseFlexibleDateToISO("amanhã", NOW)).toBeNull();
+    expect(parseFlexibleDateToISO("", NOW)).toBeNull();
+    expect(parseFlexibleDateToISO("quero ir dia 9", NOW)).toBeNull();
   });
 });

@@ -3,6 +3,7 @@ import {
   extractMessageId,
   uazapiInitInstance,
   uazapiSendMedia,
+  uazapiSendMenu,
   uazapiSendReaction,
   uazapiSendText,
 } from "./uazapi-api";
@@ -175,6 +176,95 @@ describe("uazapiSendReaction", () => {
     await expect(
       uazapiSendReaction({ ctx: CTX, to: "5511999999999", targetMessageId: "", emoji: "👍" }),
     ).rejects.toThrow(/requires targetMessageId/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("uazapiSendMenu", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(() => okJson({ messageid: "WAMENU1" })));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("POSTs a button menu with pipe-encoded 'label|id' choices to /send/menu", async () => {
+    const result = await uazapiSendMenu({
+      ctx: CTX,
+      to: "5511999999999",
+      kind: "button",
+      text: "Como podemos ajudar?",
+      choices: [
+        { label: "Suporte", id: "suporte" },
+        { label: "Pedido", id: "pedido" },
+      ],
+      footerText: "Escolha uma opção",
+    });
+    expect(lastCall().url).toBe("https://server.uazapi.test/send/menu");
+    expect(lastBody()).toEqual({
+      number: "5511999999999",
+      type: "button",
+      text: "Como podemos ajudar?",
+      choices: ["Suporte|suporte", "Pedido|pedido"],
+      footerText: "Escolha uma opção",
+    });
+    expect(result.messageId).toBe("WAMENU1");
+  });
+
+  it("encodes a list menu with section headers and 'label|id|description' rows", async () => {
+    await uazapiSendMenu({
+      ctx: CTX,
+      to: "5511999999999",
+      kind: "list",
+      text: "Catálogo",
+      choices: [
+        { label: "Smartphones", id: "phones", description: "Lançamentos", section: "Eletrônicos" },
+        { label: "Notebooks", id: "notes", section: "Eletrônicos" },
+        { label: "Fones", id: "fones", description: "Bluetooth", section: "Acessórios" },
+      ],
+      listButton: "Ver Catálogo",
+      footerText: "Preços sujeitos a alteração",
+    });
+    expect(lastBody()).toEqual({
+      number: "5511999999999",
+      type: "list",
+      text: "Catálogo",
+      choices: [
+        "[Eletrônicos]",
+        "Smartphones|phones|Lançamentos",
+        "Notebooks|notes",
+        "[Acessórios]",
+        "Fones|fones|Bluetooth",
+      ],
+      listButton: "Ver Catálogo",
+      footerText: "Preços sujeitos a alteração",
+    });
+  });
+
+  it("omits footerText and listButton when not provided", async () => {
+    await uazapiSendMenu({
+      ctx: CTX,
+      to: "5511999999999",
+      kind: "button",
+      text: "Sim ou não?",
+      choices: [
+        { label: "Sim", id: "yes" },
+        { label: "Não", id: "no" },
+      ],
+    });
+    expect(lastBody()).toEqual({
+      number: "5511999999999",
+      type: "button",
+      text: "Sim ou não?",
+      choices: ["Sim|yes", "Não|no"],
+    });
+  });
+
+  it("rejects empty text and empty choices before any network call", async () => {
+    await expect(
+      uazapiSendMenu({ ctx: CTX, to: "5511999999999", kind: "button", text: "", choices: [{ label: "A", id: "a" }] }),
+    ).rejects.toThrow(/requires text/);
+    await expect(
+      uazapiSendMenu({ ctx: CTX, to: "5511999999999", kind: "button", text: "oi", choices: [] }),
+    ).rejects.toThrow(/at least one choice/);
     expect(fetch).not.toHaveBeenCalled();
   });
 });

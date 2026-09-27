@@ -9,6 +9,8 @@
  * instead of a runtime rejection from Meta.
  */
 
+import { signMediaUrl, MEDIA_URL_TTL } from '@/lib/storage/media-url.server'
+
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
@@ -395,12 +397,21 @@ export async function sendTemplateMessage(
   }
 
   if (template) {
+    // O header de mídia vira um `link` que a META baixa no envio. Com os
+    // buckets privados (migration 054) esse link precisa estar assinado.
+    // Resolvemos AQUI o link efetivo (override do chamador ou o gravado no
+    // template) e assinamos, porque `buildSendComponents` é síncrono e
+    // puro — o que fica no banco continua sendo a URL durável.
+    const headerMediaUrl = await signMediaUrl(
+      messageParams?.headerMediaUrl ?? template.header_media_url ?? undefined,
+      MEDIA_URL_TTL.outboundSend,
+    )
     const components = buildSendComponents(template, {
       // Legacy callers pass body values in `params`; fold them into
       // `messageParams.body` so the new path covers them too.
       body: messageParams?.body ?? params,
       headerText: messageParams?.headerText,
-      headerMediaUrl: messageParams?.headerMediaUrl,
+      headerMediaUrl: headerMediaUrl || undefined,
       headerMediaId: messageParams?.headerMediaId,
       buttonParams: messageParams?.buttonParams,
     })

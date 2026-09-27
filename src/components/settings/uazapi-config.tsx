@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   CheckCircle2,
-  Copy,
   Loader2,
   QrCode,
+  RefreshCw,
   Trash2,
   XCircle,
 } from 'lucide-react';
@@ -56,6 +56,7 @@ export function UazapiConfig() {
   const [instanceToken, setInstanceToken] = useState('');
   const [dailyLimit, setDailyLimit] = useState('');
   const [savingLimit, setSavingLimit] = useState(false);
+  const [repointing, setRepointing] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -113,7 +114,7 @@ export function UazapiConfig() {
       toast.success(
         data.webhook_configured
           ? 'Configuração salva — webhook configurado automaticamente no servidor.'
-          : 'Configuração salva. Configure o webhook manualmente no painel uazapi (URL abaixo).',
+          : 'Configuração salva, mas o webhook não pôde ser configurado automaticamente. Use "Reapontar webhook" abaixo.',
       );
       setInstanceToken('');
       await refresh();
@@ -214,10 +215,25 @@ export function UazapiConfig() {
     }
   };
 
-  const copyWebhookUrl = async () => {
-    if (!state?.webhook_url) return;
-    await navigator.clipboard.writeText(state.webhook_url);
-    toast.success('URL do webhook copiada.');
+  const handleRepointWebhook = async () => {
+    setRepointing(true);
+    try {
+      const res = await fetch('/api/uazapi/config/repoint-webhook', {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? 'Falha ao reapontar o webhook.');
+        return;
+      }
+      toast.success(
+        'Webhook apontado — mensagens recebidas voltarão a chegar.',
+      );
+    } catch {
+      toast.error('Falha ao reapontar o webhook.');
+    } finally {
+      setRepointing(false);
+    }
   };
 
   if (loading) {
@@ -291,18 +307,20 @@ export function UazapiConfig() {
               <AlertTitle>Webhook da instância</AlertTitle>
               <AlertDescription className="space-y-2">
                 <p>
-                  No painel do uazapi, configure o webhook da instância{' '}
-                  <strong>{state.instance_name}</strong> para receber mensagens
-                  nesta URL:
+                  A instância <strong>{state.instance_name}</strong> está
+                  configurada para enviar mensagens recebidas a esta URL
+                  (segredo ocultado — só para conferência, não copiável/
+                  colável):
                 </p>
-                <div className="flex items-center gap-2">
-                  <code className="block max-w-full flex-1 overflow-x-auto rounded bg-muted px-2 py-1 text-xs">
-                    {state.webhook_url}
-                  </code>
-                  <Button size="sm" variant="outline" onClick={copyWebhookUrl}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </div>
+                <code className="block max-w-full overflow-x-auto rounded bg-muted px-2 py-1 text-xs">
+                  {state.webhook_url}
+                </code>
+                <p className="text-xs text-muted-foreground">
+                  Se as mensagens pararem de chegar, use &quot;Reapontar
+                  webhook&quot; abaixo — ele reconfigura o servidor uazapi sem
+                  expor o segredo. Não configure isso manualmente no painel
+                  do uazapi.
+                </p>
               </AlertDescription>
             </Alert>
           )}
@@ -360,6 +378,25 @@ export function UazapiConfig() {
                   )}
                 </div>
               )}
+
+              <div className="space-y-2 border-t pt-4">
+                <Button
+                  variant="outline"
+                  onClick={handleRepointWebhook}
+                  disabled={repointing}
+                >
+                  {repointing ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Reapontar webhook
+                </Button>
+                <p className="text-sm text-muted-foreground">
+                  Use após recriar ou trocar a instância — reconecta o
+                  recebimento de mensagens.
+                </p>
+              </div>
             </CardContent>
           </Card>
 
@@ -371,7 +408,7 @@ export function UazapiConfig() {
                 oficiais são banidos por volume alto, principalmente quando
                 novos. Deixe em branco para não ter limite. Aquecimento
                 sugerido: semana 1 = 30–50/dia, semana 2 = 80, semana 3 = 120,
-                semana 4+ = 150–200. Respostas 1 a 1 (inbox/robô) nunca são
+                semana 4+ = 150–200. Respostas 1 a 1 (inbox/Neuza) nunca são
                 bloqueadas por este teto.
               </CardDescription>
             </CardHeader>

@@ -22,6 +22,17 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
  */
 export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
+/**
+ * Sentinel the model is instructed to emit (in auto-reply mode) when
+ * the customer has clearly confirmed they want to book a package that
+ * has an automated-closing Flow (`flows.ai_topic`, see
+ * 061_ai_topic_flow_trigger.sql). `<topic>` must be one of the exact
+ * values passed as `bookableTopics` to `buildSystemPrompt` — anything
+ * else is ignored by `startFlowByAiTopic` (no matching active flow).
+ * Parsed and stripped by `parseGeneration`.
+ */
+export const BOOKING_SENTINEL_RE = /\[\[RESERVAR:([a-z0-9 _-]+)\]\]/i
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
@@ -54,8 +65,16 @@ export function buildSystemPrompt(args: {
   mode: 'draft' | 'auto_reply'
   /** Knowledge-base excerpts retrieved for the current question. */
   knowledge?: string[]
+  /** The account's active tour/package catalog (src/lib/ai/pacotes.ts). */
+  pacotes?: string[]
+  /**
+   * Package categories that have an automated-closing Flow wired up
+   * (src/lib/ai/booking-topics.ts). Auto-reply mode only — draft mode
+   * has no flow to hand off into.
+   */
+  bookableTopics?: string[]
 }): string {
-  const { userPrompt, mode, knowledge } = args
+  const { userPrompt, mode, knowledge, pacotes, bookableTopics } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -72,8 +91,27 @@ export function buildSystemPrompt(args: {
     )
   }
 
+  if (mode === 'auto_reply' && bookableTopics && bookableTopics.length > 0) {
+    parts.push(
+      'Automated closing: the following package categories (exact values) can be booked automatically once the customer clearly confirms they want to proceed — ' +
+        `${bookableTopics.join(', ')}. The moment the customer confirms (not just asks about price/availability — they've said yes/quero fechar/quero reservar/pode marcar or equivalent) for ONE of these categories, reply with EXACTLY [[RESERVAR:<categoria>]] using one of the exact category values above (e.g. [[RESERVAR:${bookableTopics[0]}]]) and nothing else — no extra text before or after. ` +
+        'Do not ask for date/time/party size yourself first — the automated flow that takes over asks for those. Only use this sentinel for a genuine, unambiguous booking confirmation; for anything else (questions, browsing, a category not in this list), keep chatting normally or hand off per the rule above.',
+    )
+  }
+
   if (userPrompt && userPrompt.trim()) {
     parts.push(`Business context and instructions:\n${userPrompt.trim()}`)
+  }
+
+  if (pacotes && pacotes.length > 0) {
+    parts.push(
+      'Catálogo de pacotes/passeios — esta é a lista COMPLETA e ATUAL de pacotes ativos do negócio, com preço exato. ' +
+        'Use estes valores exatos para qualquer pergunta sobre preço, duração ou o que está disponível; nunca invente ou estime um preço que não esteja aqui. ' +
+        'Os "Horários disponíveis" listados são os horários em que o pacote RODA normalmente, não uma confirmação de vaga livre numa data específica — para fechar, confirme data e horário desejados e trate como pendente de confirmação. ' +
+        `Se o cliente pedir algo que não está na lista, diga que não está disponível${
+          mode === 'auto_reply' ? ` ou responda exatamente ${HANDOFF_SENTINEL} se não tiver certeza` : ''
+        }.\n\n${pacotes.map((p, i) => `[${i + 1}] ${p}`).join('\n\n---\n\n')}`,
+    )
   }
 
   if (knowledge && knowledge.length > 0) {

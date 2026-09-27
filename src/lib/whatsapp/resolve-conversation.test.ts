@@ -1,8 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { resolveConversationByPhone } from './resolve-conversation';
 import { SendMessageError } from './send-message';
+
+// The fail-fast "is WhatsApp connected?" check now reads whatsapp_config
+// through the admin client (its RLS is admin-only, but any account
+// member may send). Mock it to echo the same config the scripted db
+// carries — `resolveAuditUserId` still reads the owner from `db`.
+let adminConfigResult: { data: unknown; error: null } = { data: null, error: null };
+vi.mock('@/lib/flows/admin-client', () => ({
+  supabaseAdmin: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve(adminConfigResult),
+        }),
+      }),
+    }),
+  }),
+}));
 
 // ------------------------------------------------------------
 // Chainable Supabase stub, scripted per table. Terminal methods
@@ -24,6 +41,13 @@ interface Script {
 }
 
 function makeDb(script: Script): SupabaseClient {
+  // Point the admin fail-fast check at the same config the db carries:
+  // present → a truthy row (only existence matters there), absent → null.
+  adminConfigResult = {
+    data: script.config ? { id: 'cfg-1' } : null,
+    error: null,
+  };
+
   let table = '';
   let mode: 'select' | 'insert' | 'update' = 'select';
   let likeCalls = 0;

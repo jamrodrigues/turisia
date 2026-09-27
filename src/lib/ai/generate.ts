@@ -1,5 +1,5 @@
 import { AiError, type AiConfig, type ChatMessage, type GenerateResult } from './types'
-import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
+import { HANDOFF_SENTINEL, BOOKING_SENTINEL_RE, aiRequestTimeoutMs } from './defaults'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
 
@@ -46,12 +46,16 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
 }
 
 /**
- * Split the raw model output into `{ text, handoff }`. The sentinel can
- * appear alone or trailing a partial reply; either way we treat the
- * turn as a handoff and strip the marker from any remaining text.
+ * Split the raw model output into `{ text, handoff, bookingTopic }`.
+ * Either sentinel can appear alone or trailing a partial reply; both
+ * are stripped from the returned text. `bookingTopic` takes priority
+ * over `handoff` if a (malformed) reply somehow carried both — the
+ * caller acts on whichever field is set, never both.
  */
 export function parseGeneration(raw: string): Omit<GenerateResult, 'usage'> {
+  const bookingMatch = raw.match(BOOKING_SENTINEL_RE)
+  const bookingTopic = bookingMatch ? bookingMatch[1].trim().toLowerCase() : null
   const handoff = raw.includes(HANDOFF_SENTINEL)
-  const text = raw.split(HANDOFF_SENTINEL).join('').trim()
-  return { text, handoff }
+  const text = raw.replace(BOOKING_SENTINEL_RE, '').split(HANDOFF_SENTINEL).join('').trim()
+  return { text, handoff, bookingTopic }
 }

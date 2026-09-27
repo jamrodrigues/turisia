@@ -1,7 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { normalizeUazapiWebhook } from '@/lib/whatsapp/uazapi-normalize'
-import { uazapiDownloadMessage } from '@/lib/whatsapp/uazapi-api'
+import { uazapiDownloadMessage, escapeIlikeExactMatch } from '@/lib/whatsapp/uazapi-api'
 import {
   processNormalizedInbound,
   findOrCreateContact,
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   const { data: config, error: configError } = await supabaseAdmin()
     .from('whatsapp_config')
     .select('*')
-    .eq('uazapi_instance_name', event.instanceName)
+    .ilike('uazapi_instance_name', escapeIlikeExactMatch(event.instanceName))
     .maybeSingle()
 
   if (configError || !config) {
@@ -152,6 +152,7 @@ async function processEvent(event: NormalizedEvent, config: ConfigRow) {
     // from Supabase. Best-effort at every step: on failure the message
     // still lands (with the provider URL, or a readable placeholder).
     let mediaUrl: string | null = null
+    let mediaMimeType: string | null = null
     let contentText = event.text
     if (event.hasMedia && event.waMessageId) {
       try {
@@ -171,6 +172,7 @@ async function processEvent(event: NormalizedEvent, config: ConfigRow) {
         // Prefer our durable copy; fall back to the provider URL if the
         // re-upload failed for any reason.
         mediaUrl = stored ?? dl.fileUrl
+        mediaMimeType = dl.mimetype ?? null
       } catch (err) {
         console.warn(
           '[uazapi webhook] media download failed:',
@@ -195,7 +197,11 @@ async function processEvent(event: NormalizedEvent, config: ConfigRow) {
       contentType: event.contentType,
       contentText,
       mediaUrl,
-      interactiveReplyId: null, // uazapi replies arrive as plain text
+      mediaMimeType,
+      // Native menu taps arrive with the tapped row/button id in
+      // `buttonOrListid` (and often an EMPTY text) — pass it through so
+      // flows can match by reply_id like the Meta path does.
+      interactiveReplyId: event.interactiveReplyId,
       replyToWaMessageId: null,
     })
   } catch (err) {

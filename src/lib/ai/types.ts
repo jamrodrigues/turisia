@@ -42,10 +42,18 @@ export interface TokenUsage {
 
 /** Outcome of a generation call. */
 export interface GenerateResult {
-  /** The reply text, with any handoff sentinel stripped. */
+  /** The reply text, with any handoff/booking sentinel stripped. */
   text: string
   /** True when the model asked to hand off to a human (auto-reply mode). */
   handoff: boolean
+  /**
+   * Set when the model detected clear booking intent for one of the
+   * `bookableTopics` passed into `buildSystemPrompt` and emitted the
+   * `[[RESERVAR:<topic>]]` sentinel — auto-reply.ts starts the matching
+   * Flow (`flows.ai_topic`) instead of sending this as a chat reply.
+   * Null otherwise.
+   */
+  bookingTopic: string | null
   /** Provider-reported token usage (ai_usage_events metering, 039). */
   usage: TokenUsage
 }

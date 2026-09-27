@@ -126,12 +126,27 @@ vi.mock('@/lib/supabase/server', () => ({
 
 vi.mock('@/lib/flows/admin-client', () => ({
   supabaseAdmin: () => ({
-    from: () => {
+    // The send core reads whatsapp_config through the admin client (its
+    // RLS is admin-only); flow_runs pause still goes through here too.
+    from: (table: string) => {
       const b: Record<string, unknown> = {}
       const chain = () => b
       for (const m of ['update', 'eq', 'select']) b[m] = vi.fn(chain)
-      b.then = (resolve: (v: unknown) => unknown) =>
-        resolve({ data: null, error: null })
+      const result =
+        table === 'whatsapp_config'
+          ? {
+              data: {
+                id: 'cfg-1',
+                account_id: 'acct-1',
+                phone_number_id: 'PNID-1',
+                access_token: 'enc-token',
+              },
+              error: null,
+            }
+          : { data: null, error: null }
+      b.single = vi.fn(() => Promise.resolve(result))
+      b.maybeSingle = vi.fn(() => Promise.resolve(result))
+      b.then = (resolve: (v: unknown) => unknown) => resolve(result)
       return b
     },
   }),

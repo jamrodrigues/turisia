@@ -42,14 +42,45 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Hello there')).toEqual({
       text: 'Hello there',
       handoff: false,
+      bookingTopic: null,
     })
   })
 
   it('detects + strips the handoff sentinel', () => {
-    expect(parseGeneration('[[HANDOFF]]')).toEqual({ text: '', handoff: true })
+    expect(parseGeneration('[[HANDOFF]]')).toEqual({ text: '', handoff: true, bookingTopic: null })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
       text: 'Let me get a human',
       handoff: true,
+      bookingTopic: null,
+    })
+  })
+
+  it('detects + strips the booking sentinel, lowercasing the topic', () => {
+    expect(parseGeneration('[[RESERVAR:buggy]]')).toEqual({
+      text: '',
+      handoff: false,
+      bookingTopic: 'buggy',
+    })
+    expect(parseGeneration('[[RESERVAR:BUGGY]]')).toEqual({
+      text: '',
+      handoff: false,
+      bookingTopic: 'buggy',
+    })
+  })
+
+  it('handles a multi-word category like "city tour"', () => {
+    expect(parseGeneration('[[RESERVAR:city tour]]')).toEqual({
+      text: '',
+      handoff: false,
+      bookingTopic: 'city tour',
+    })
+  })
+
+  it('strips the booking sentinel even with surrounding text', () => {
+    expect(parseGeneration('Show! [[RESERVAR:buggy]]')).toEqual({
+      text: 'Show!',
+      handoff: false,
+      bookingTopic: 'buggy',
     })
   })
 })
@@ -69,7 +100,7 @@ describe('generateReply — OpenAI', () => {
       messages: [{ role: 'user', content: 'Hi' }],
     })
 
-    expect(res).toEqual({ text: 'Sure — happy to help!', handoff: false, usage: { inputTokens: 0, outputTokens: 0 } })
+    expect(res).toEqual({ text: 'Sure — happy to help!', handoff: false, bookingTopic: null, usage: { inputTokens: 0, outputTokens: 0 } })
     const [url, opts] = fetchMock.mock.calls[0]
     expect(url).toContain('api.openai.com')
     expect(opts.headers.Authorization).toBe('Bearer sk-test')
@@ -120,7 +151,7 @@ describe('generateReply — Anthropic', () => {
       messages: [{ role: 'user', content: 'Hello' }],
     })
 
-    expect(res).toEqual({ text: 'Hi there!', handoff: false, usage: { inputTokens: 0, outputTokens: 0 } })
+    expect(res).toEqual({ text: 'Hi there!', handoff: false, bookingTopic: null, usage: { inputTokens: 0, outputTokens: 0 } })
     const [url, opts] = fetchMock.mock.calls[0]
     expect(url).toContain('api.anthropic.com')
     expect(opts.headers['x-api-key']).toBe('sk-ant-x')

@@ -1,5 +1,6 @@
 import { uploadResumableMedia } from '@/lib/whatsapp/meta-api'
 import type { TemplatePayload } from '@/lib/whatsapp/template-validators'
+import { signMediaUrl, MEDIA_URL_TTL } from '@/lib/storage/media-url.server'
 
 /**
  * Meta requires an `example.header_handle` (from the Resumable Upload
@@ -37,7 +38,11 @@ export async function ensureImageHeaderHandle(
   // and for a manually-pasted public link).
   let res: Response
   try {
-    res = await fetch(payload.header_media_url)
+    // Bucket privado desde a migration 054 — a URL gravada é a forma
+    // durável, então assinamos só para este fetch.
+    res = await fetch(
+      await signMediaUrl(payload.header_media_url, MEDIA_URL_TTL.serverFetch),
+    )
   } catch {
     throw new Error('Could not fetch the header image URL. Make sure it is publicly reachable.')
   }

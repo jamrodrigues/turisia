@@ -24,6 +24,8 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
+import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { findOrCreateConversationRow } from '@/lib/whatsapp/find-or-create-conversation';
 
 export interface ResolvedConversation {
   conversationId: string;
@@ -54,8 +56,12 @@ export async function resolveConversationByPhone(
   }
 
   // Fail fast (and create nothing) when the account has no WhatsApp
-  // connected — the same error the send would raise anyway.
-  const { data: config } = await db
+  // connected — the same error the send would raise anyway. Read with
+  // the admin client: the whatsapp_config RLS is admin-only (it holds
+  // encrypted tokens), but any member of the account may send — the
+  // caller already authenticated and scoped accountId, so we still
+  // filter by it.
+  const { data: config } = await supabaseAdmin()
     .from('whatsapp_config')
     .select('id')
     .eq('account_id', accountId)
@@ -138,30 +144,17 @@ export async function resolveConversationByPhone(
 
   // ---- conversation -------------------------------------------
   // One conversation per (account, contact) — same convention as the
-  // webhook.
-  const { data: conv } = await db
-    .from('conversations')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .maybeSingle();
+  // webhook. Shared race-recovery core: see find-or-create-conversation.ts.
+  const convResult = await findOrCreateConversationRow<{ id: string }>({
+    db,
+    accountId,
+    ownerUserId,
+    contactId,
+    select: 'id',
+  });
 
-  if (conv?.id) {
-    return { conversationId: conv.id, contactId, contactCreated };
-  }
-
-  const { data: newConv, error: convErr } = await db
-    .from('conversations')
-    .insert({
-      account_id: accountId,
-      user_id: ownerUserId,
-      contact_id: contactId,
-    })
-    .select('id')
-    .single();
-
-  if (convErr || !newConv) {
-    console.error('[resolve-conversation] conversation create error:', convErr);
+  if (!convResult.row) {
+    console.error('[resolve-conversation] conversation create error:', convResult.error);
     throw new SendMessageError(
       'db_error',
       'Failed to create conversation',
@@ -169,5 +162,5 @@ export async function resolveConversationByPhone(
     );
   }
 
-  return { conversationId: newConv.id, contactId, contactCreated };
+  return { conversationId: convResult.row.id, contactId, contactCreated };
 }

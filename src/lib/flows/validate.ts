@@ -701,6 +701,149 @@ function validateNode(
       break;
     }
 
+    case "set_var": {
+      const cfg = node.config as {
+        var_key?: string;
+        value?: string;
+        next_node_key?: string;
+      };
+      if (!cfg.var_key?.trim()) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "var_key",
+          message: "Set-var needs a variable name to write.",
+        });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: "Set-var must point to a next node.",
+        });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: `Set-var points to non-existent node "${cfg.next_node_key}".`,
+        });
+      }
+      break;
+    }
+
+    case "create_reservation": {
+      const cfg = node.config as {
+        pacote_id?: string;
+        data_var_key?: string;
+        quantidade_var_key?: string;
+        success_next?: string;
+        failure_next?: string;
+      };
+      if (!cfg.pacote_id?.trim()) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "pacote_id",
+          message: "Create-reservation needs a pacote to book.",
+        });
+      }
+      if (!cfg.data_var_key?.trim()) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "data_var_key",
+          message: "Create-reservation needs the vars key holding the booking date.",
+        });
+      }
+      if (!cfg.quantidade_var_key?.trim()) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "quantidade_var_key",
+          message: "Create-reservation needs the vars key holding the party size.",
+        });
+      }
+      for (const branch of ["success_next", "failure_next"] as const) {
+        const key = cfg[branch];
+        if (!key) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: branch,
+            message: `Create-reservation needs a node for the "${branch === "success_next" ? "success" : "failure"}" branch.`,
+          });
+        } else if (!knownKeys.has(key)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: branch,
+            message: `Create-reservation's "${branch}" points to non-existent node "${key}".`,
+          });
+        }
+      }
+      break;
+    }
+
+    case "create_payment": {
+      const cfg = node.config as {
+        success_next?: string;
+        failure_next?: string;
+      };
+      for (const branch of ["success_next", "failure_next"] as const) {
+        const key = cfg[branch];
+        if (!key) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: branch,
+            message: `Create-payment needs a node for the "${branch === "success_next" ? "success" : "failure"}" branch.`,
+          });
+        } else if (!knownKeys.has(key)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: branch,
+            message: `Create-payment's "${branch}" points to non-existent node "${key}".`,
+          });
+        }
+      }
+      break;
+    }
+
+    case "send_voucher": {
+      const cfg = node.config as { next_node_key?: string };
+      if (!cfg.next_node_key) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: "Send-voucher must point to a next node.",
+        });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: `Send-voucher points to non-existent node "${cfg.next_node_key}".`,
+        });
+      }
+      break;
+    }
+
     case "handoff":
     case "end":
       // Terminal nodes have no outgoing edges; nothing to validate
@@ -751,7 +894,9 @@ function outgoingEdges(node: NodeInput): string[] {
     case "send_message":
     case "send_media":
     case "collect_input":
-    case "set_tag": {
+    case "set_tag":
+    case "set_var":
+    case "send_voucher": {
       const cfg = node.config as { next_node_key?: string };
       return cfg.next_node_key ? [cfg.next_node_key] : [];
     }
@@ -763,6 +908,17 @@ function outgoingEdges(node: NodeInput): string[] {
       const out: string[] = [];
       if (cfg.true_next) out.push(cfg.true_next);
       if (cfg.false_next) out.push(cfg.false_next);
+      return out;
+    }
+    case "create_reservation":
+    case "create_payment": {
+      const cfg = node.config as {
+        success_next?: string;
+        failure_next?: string;
+      };
+      const out: string[] = [];
+      if (cfg.success_next) out.push(cfg.success_next);
+      if (cfg.failure_next) out.push(cfg.failure_next);
       return out;
     }
     case "send_buttons": {

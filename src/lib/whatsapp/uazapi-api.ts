@@ -14,6 +14,7 @@
  * Endpoints (confirmed against docs.uazapi.com + the official n8n node):
  *   POST /send/text      { number, text }
  *   POST /send/media     { number, type, file, caption }
+ *   POST /send/menu      { number, type, text, choices, ... }
  *   POST /message/react  { number, id, text }
  *   POST /instance/connect | GET /instance/status | POST /instance/init
  *
@@ -65,6 +66,15 @@ async function uazapiPost(
   path: string,
   body: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  // Test-only escape hatch: when DRIVER_NO_SEND=1 the outbound WhatsApp POST
+  // is skipped and a synthetic response is returned. The engine still writes
+  // the outbound `messages` row (extractMessageId yields the fake id), so the
+  // E2E driver can read the bot's replies from the DB without blasting real
+  // WhatsApp messages to the test phone. NEVER set this in production — it
+  // silences every send. Default (unset) preserves the real send path.
+  if (process.env.DRIVER_NO_SEND === '1') {
+    return { messageid: `nosend-${path.replace(/\W+/g, '')}-${Date.now()}` }
+  }
   const response = await fetch(`${normalizeBaseUrl(ctx.baseUrl)}${path}`, {
     method: 'POST',
     headers: {
@@ -157,6 +167,89 @@ export async function uazapiSendMedia(
   if (caption && kind !== 'audio') body.caption = caption
   if (filename && kind === 'document') body.docName = filename
   const data = await uazapiPost(ctx, '/send/media', body)
+  return { messageId: extractMessageId(data) }
+}
+
+// ============================================================
+// Native interactive menus (buttons / lists) — POST /send/menu
+// ============================================================
+
+export interface UazapiMenuChoice {
+  /** Visible label of the reply button / list row. */
+  label: string
+  /** Stable id echoed back in the webhook when the option is tapped. */
+  id: string
+  /** List rows only — optional secondary line under the label. */
+  description?: string
+  /** List rows only — section header this row is grouped under. */
+  section?: string
+}
+
+export interface UazapiSendMenuArgs {
+  ctx: UazapiContext
+  /** Recipient phone, digits with country code (e.g. 5511999999999). */
+  to: string
+  /** 'button' → up to 3 reply buttons; 'list' → tap-to-expand section list. */
+  kind: 'button' | 'list'
+  /** Body text shown above the menu. */
+  text: string
+  choices: UazapiMenuChoice[]
+  /** Optional grey footer line under the menu. */
+  footerText?: string
+  /** List-only: label of the button that opens the list. */
+  listButton?: string
+}
+
+/**
+ * Encode list choices into uazapi's flat string array: a `[Section]`
+ * header line is emitted whenever the section changes, followed by each
+ * row as `label|id|description` (description omitted when absent).
+ * Rows without a section are emitted with no header.
+ */
+function encodeListChoices(choices: UazapiMenuChoice[]): string[] {
+  const out: string[] = []
+  let currentSection: string | undefined
+  for (const c of choices) {
+    if (c.section && c.section !== currentSection) {
+      out.push(`[${c.section}]`)
+      currentSection = c.section
+    }
+    out.push(c.description ? `${c.label}|${c.id}|${c.description}` : `${c.label}|${c.id}`)
+  }
+  return out
+}
+
+/**
+ * Send a native interactive menu (reply buttons or a section list) via
+ * POST /send/menu.
+ *
+ * uazapi encodes options as pipe-delimited strings rather than objects:
+ *   button → "label|id"
+ *   list   → "[Section]" header lines + "label|id|description" rows
+ *
+ * (Confirmed against the uazapi OpenAPI /send/menu spec.) The tapped
+ * option's id comes back in the webhook exactly as sent, so callers keep
+ * matching on button/row id just like Meta.
+ *
+ * Interactive menus on unofficial WhatsApp are officially "may be removed
+ * at any time", so callers should keep a numbered-text fallback (see
+ * sender.ts) for when this throws.
+ */
+export async function uazapiSendMenu(
+  args: UazapiSendMenuArgs,
+): Promise<UazapiSendResult> {
+  const { ctx, to, kind, text, choices, footerText, listButton } = args
+  if (!text) throw new Error('uazapiSendMenu requires text.')
+  if (!choices.length) throw new Error('uazapiSendMenu requires at least one choice.')
+  const body: Record<string, unknown> = {
+    number: to,
+    type: kind,
+    text,
+    choices: kind === 'button' ? choices.map((c) => `${c.label}|${c.id}`) : encodeListChoices(choices),
+  }
+  if (footerText) body.footerText = footerText
+  if (kind === 'list' && listButton) body.listButton = listButton
+  const data = await uazapiPost(ctx, '/send/menu', body)
   return { messageId: extractMessageId(data) }
 }
 
@@ -327,6 +420,25 @@ export async function uazapiSetWebhook(
 }
 
 /**
+ * Read the instance's currently configured webhook(s).
+ *
+ *   GET /webhook → [ { id, url, enabled, events, ... } ] | null
+ *
+ * Returns the raw JSON (array or null); callers parse it with
+ * `parseWebhookList` (uazapi-webhook-url.ts). Used to confirm a
+ * repoint actually took on the server.
+ */
+export async function uazapiGetWebhook(ctx: UazapiContext): Promise<unknown> {
+  const response = await fetch(`${normalizeBaseUrl(ctx.baseUrl)}/webhook`, {
+    headers: { Accept: 'application/json', token: ctx.token },
+  })
+  if (!response.ok) {
+    await throwUazapiError(response, `uazapi error ${response.status} on /webhook`)
+  }
+  return response.json()
+}
+
+/**
  * Create a new instance on the server. Provisioning-only (Fase 04) —
  * requires the server admin token, NOT an instance token.
  * Returns the new instance's token.
@@ -358,4 +470,17 @@ export async function uazapiInitInstance(args: {
     throw new Error('uazapi /instance/init did not return an instance token.')
   }
   return { instanceToken, raw: data }
+}
+
+/**
+ * Escapes PostgREST/Postgres `ILIKE` wildcards (`%`, `_`) and the escape
+ * character itself in a value that's about to be used as an exact,
+ * case-insensitive match — NOT as a real pattern. `uazapi_instance_name`
+ * lookups use `.ilike()` (uazapi's own casing isn't guaranteed stable)
+ * but the value is always meant to match exactly, so an unescaped `_` in
+ * an instance name would silently work as a single-character wildcard
+ * and could match a different account's differently-named instance.
+ */
+export function escapeIlikeExactMatch(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`)
 }

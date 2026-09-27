@@ -21,7 +21,10 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import type { ParsedInbound } from '@/lib/flows/types'
 import { dispatchInboundToBrain } from '@/lib/ai/dispatch'
+import { findOrCreateConversationRow } from '@/lib/whatsapp/find-or-create-conversation'
+import type { Conversation } from '@/types'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 
 function supabaseAdmin() {
@@ -29,6 +32,33 @@ function supabaseAdmin() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
+}
+
+/** Content types that carry a media URL the flow engine can consume. */
+/**
+ * Build the normalized message the flow engine receives. Order matters:
+ *  1. native menu tap (interactive_reply) — has an explicit reply id;
+ *  2. plain text (default) — the flow engine has no media-consuming
+ *     node, so a media inbound degrades to text using whatever
+ *     caption/placeholder the normalizer put in contentText (the
+ *     mediaUrl itself is still stored on the `messages` row — this
+ *     only affects what the flow runner sees).
+ */
+export function buildDispatchMessage(input: NormalizedInbound): ParsedInbound {
+  if (input.interactiveReplyId) {
+    return {
+      kind: 'interactive_reply',
+      reply_id: input.interactiveReplyId,
+      reply_title: input.contentText ?? '',
+      meta_message_id: input.waMessageId,
+    }
+  }
+
+  return {
+    kind: 'text',
+    text: input.contentText ?? '',
+    meta_message_id: input.waMessageId,
+  }
 }
 
 /** Values allowed by the messages.content_type CHECK constraint
@@ -77,6 +107,13 @@ export interface NormalizedInbound {
   contentType: AllowedContentType
   contentText: string | null
   mediaUrl: string | null
+  /** MIME reported by the uazapi download (e.g. 'image/jpeg',
+   *  'application/pdf'). Null for non-media or when the download failed.
+   *  Persisted on the `messages` row (069) for the inbox/API; NOT yet
+   *  exposed to the flow engine — `buildDispatchMessage` below still
+   *  degrades every media message to `kind: 'text'`, so a flow can't
+   *  branch on it today. That's a real follow-up, not done here. */
+  mediaMimeType?: string | null
   /** Tapped button/list-row id (Meta interactive replies). uazapi
    *  sends plain text answers → always null there. */
   interactiveReplyId: string | null
@@ -166,12 +203,21 @@ export async function processNormalizedInbound(
     .eq('sender_type', 'customer')
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
+  // Native menu taps (uazapi `buttonOrListid`) arrive with only the reply
+  // id and an EMPTY content_text — the provider never sends the tapped
+  // option's TITLE, so there's nothing readable to store here. We keep the
+  // cell blank on purpose: the flow engine knows the option title from the
+  // suspended node's config and stamps it back onto this row once it matches
+  // the tap (see labelTappedMessage in src/lib/flows/engine.ts). That
+  // downstream UPDATE only fills a blank cell, so the blank we write here is
+  // exactly what it keys off of.
   const { error: msgError } = await supabaseAdmin().from('messages').insert({
     conversation_id: conversation.id,
     sender_type: 'customer',
     content_type: input.contentType,
     content_text: input.contentText,
     media_url: input.mediaUrl,
+    media_mime_type: input.mediaMimeType ?? null,
     message_id: input.waMessageId || null,
     status: 'delivered',
     created_at: input.timestamp.toISOString(),
@@ -183,15 +229,18 @@ export async function processNormalizedInbound(
     return { outcome: 'error' }
   }
 
-  const { error: convError } = await supabaseAdmin()
-    .from('conversations')
-    .update({
-      last_message_text: input.contentText || `[${input.contentType}]`,
-      last_message_at: new Date().toISOString(),
-      unread_count: (conversation.unread_count || 0) + 1,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', conversation.id)
+  // Incremento ATÔMICO do não-lidas + carimbo da última mensagem, num
+  // UPDATE só (migration 052). O read-modify-write anterior
+  // (`unread_count: <valor lido> + 1`) perdia contagem quando duas
+  // mensagens do mesmo contato chegavam juntas: as duas liam N, as duas
+  // gravavam N+1.
+  const { error: convError } = await supabaseAdmin().rpc(
+    'increment_conversation_unread',
+    {
+      p_conversation_id: conversation.id,
+      p_last_message_text: input.contentText || `[${input.contentType}]`,
+    },
+  )
   if (convError) {
     console.error('[inbound] error updating conversation:', convError)
   }
@@ -204,26 +253,24 @@ export async function processNormalizedInbound(
   // and both win over the LLM. See the Meta route's original comment
   // block for the full rationale; the semantics are identical here.
   // ============================================================
-  const flowResult = await dispatchInboundToFlows({
-    accountId: input.accountId,
-    userId: input.configOwnerUserId,
-    contactId: contactRecord.id,
-    conversationId: conversation.id,
-    message: input.interactiveReplyId
-      ? {
-          kind: 'interactive_reply',
-          reply_id: input.interactiveReplyId,
-          reply_title: input.contentText ?? '',
-          meta_message_id: input.waMessageId,
-        }
-      : {
-          kind: 'text',
-          text: input.contentText ?? '',
-          meta_message_id: input.waMessageId,
-        },
-    isFirstInboundMessage,
-  })
-  const flowConsumed = flowResult.consumed
+  // Cliente aguardando atendente humano — quando a conversa foi passada a um
+  // humano (ai_autoreply_disabled=true, seja por handoff do bot ou ação de um
+  // atendente), o bot fica mudo (flow E ia) até return_conversation_to_bot
+  // reabrir. O brain já é barrado por isBotEligible; aqui pulamos o flow para
+  // que ele não responda a keyword ("menu"/"voltar"/"início") durante a espera.
+  // Quando false/null, o comportamento é inalterado — o flow roda normalmente.
+  let flowConsumed = false
+  if (conversation.ai_autoreply_disabled !== true) {
+    const flowResult = await dispatchInboundToFlows({
+      accountId: input.accountId,
+      userId: input.configOwnerUserId,
+      contactId: contactRecord.id,
+      conversationId: conversation.id,
+      message: buildDispatchMessage(input),
+      isFirstInboundMessage,
+    })
+    flowConsumed = flowResult.consumed
+  }
 
   const inboundText = input.contentText ?? ''
   const automationTriggers: (
@@ -327,6 +374,7 @@ export async function findOrCreateContact(
       user_id: configOwnerUserId,
       phone,
       name: name || phone,
+      source: 'whatsapp',
     })
     .select()
     .single()
@@ -345,38 +393,31 @@ export async function findOrCreateContact(
   return { contact: newContact, wasCreated: true }
 }
 
+/** Uma conversa por (account_id, contact_id) — ver migration 052. */
+/**
+ * Same race-recovery core the outbound send path uses
+ * (resolve-conversation.ts) — see find-or-create-conversation.ts. The
+ * webhook wants the full row (downstream code reads more than `id` off
+ * it) and a null-on-failure convention rather than a throw, so it wraps
+ * the shared core instead of sharing its own bespoke copy.
+ */
 export async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
 ) {
-  const { data: existing, error: findError } = await supabaseAdmin()
-    .from('conversations')
-    .select('*')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .single()
-
-  if (!findError && existing) {
-    return { conversation: existing, created: false }
-  }
-
-  const { data: newConv, error: createError } = await supabaseAdmin()
-    .from('conversations')
-    .insert({
-      account_id: accountId,
-      user_id: configOwnerUserId,
-      contact_id: contactId,
-    })
-    .select()
-    .single()
-
-  if (createError) {
-    console.error('[inbound] error creating conversation:', createError)
+  const result = await findOrCreateConversationRow<Conversation>({
+    db: supabaseAdmin(),
+    accountId,
+    ownerUserId: configOwnerUserId,
+    contactId,
+    select: '*',
+  })
+  if (!result.row) {
+    console.error('[inbound] error creating conversation:', result.error)
     return null
   }
-
-  return { conversation: newConv, created: true }
+  return { conversation: result.row, created: result.created }
 }
 
 /**

@@ -6,8 +6,10 @@ const h = vi.hoisted(() => ({
   loadAiConfig: vi.fn(),
   buildConversationContext: vi.fn(),
   retrieveKnowledge: vi.fn(),
+  retrieveBookableTopics: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
+  startFlowByAiTopic: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -20,8 +22,10 @@ const h = vi.hoisted(() => ({
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
+vi.mock('./booking-topics', () => ({ retrieveBookableTopics: h.retrieveBookableTopics }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/flows/engine', () => ({ startFlowByAiTopic: h.startFlowByAiTopic }))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
@@ -93,8 +97,15 @@ beforeEach(() => {
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
-  h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false, usage: { inputTokens: 100, outputTokens: 20 } })
+  h.retrieveBookableTopics.mockResolvedValue([])
+  h.generateReply.mockResolvedValue({
+    text: 'Hello!',
+    handoff: false,
+    bookingTopic: null,
+    usage: { inputTokens: 100, outputTokens: 20 },
+  })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
+  h.startFlowByAiTopic.mockResolvedValue({ consumed: true, outcome: 'started' })
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {
@@ -187,10 +198,69 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
 
 describe('dispatchInboundToAiReply — handoff', () => {
   it('disables auto-reply and does not send on handoff', async () => {
-    h.generateReply.mockResolvedValue({ text: '', handoff: true, usage: { inputTokens: 100, outputTokens: 5 } })
+    h.generateReply.mockResolvedValue({
+      text: '',
+      handoff: true,
+      bookingTopic: null,
+      usage: { inputTokens: 100, outputTokens: 5 },
+    })
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.state.updatePayload).toEqual({ ai_autoreply_disabled: true })
     expect(h.state.rpcCalls).toHaveLength(0)
+  })
+})
+
+describe('dispatchInboundToAiReply — booking sentinel', () => {
+  it('starts the matching flow instead of sending a chat reply', async () => {
+    h.retrieveBookableTopics.mockResolvedValue(['buggy'])
+    h.generateReply.mockResolvedValue({
+      text: '',
+      handoff: false,
+      bookingTopic: 'buggy',
+      usage: { inputTokens: 100, outputTokens: 5 },
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.startFlowByAiTopic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'acct-1',
+        contactId: 'contact-1',
+        conversationId: 'conv-1',
+        topic: 'buggy',
+      }),
+    )
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    // Consumed by the flow — the thread is NOT marked ai_autoreply_disabled.
+    expect(h.state.updatePayload).toBeNull()
+  })
+
+  it('falls back to human handoff when no active flow matches the topic', async () => {
+    h.retrieveBookableTopics.mockResolvedValue(['buggy'])
+    h.generateReply.mockResolvedValue({
+      text: '',
+      handoff: false,
+      bookingTopic: 'buggy',
+      usage: { inputTokens: 100, outputTokens: 5 },
+    })
+    h.startFlowByAiTopic.mockResolvedValue({ consumed: false, outcome: 'no_match' })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toEqual({ ai_autoreply_disabled: true })
+  })
+
+  it('ignores a booking topic the account never advertised as bookable', async () => {
+    h.retrieveBookableTopics.mockResolvedValue(['buggy'])
+    h.generateReply.mockResolvedValue({
+      text: '',
+      handoff: false,
+      bookingTopic: 'mergulho', // not in bookableTopics
+      usage: { inputTokens: 100, outputTokens: 5 },
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.startFlowByAiTopic).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    // Still disables auto-reply — a mismatched/hallucinated sentinel is
+    // never sent to the customer as literal text either.
+    expect(h.state.updatePayload).toEqual({ ai_autoreply_disabled: true })
   })
 })

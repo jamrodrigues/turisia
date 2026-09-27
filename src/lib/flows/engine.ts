@@ -40,9 +40,16 @@ import {
   engineSendText,
 } from "./meta-send";
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
+import { renderVoucherPdf, voucherFilename } from "./voucher";
+import { signMediaUrl } from "@/lib/storage/media-url.server";
+import { MEDIA_URL_TTL } from "@/lib/storage/media-url";
+import { loadPaymentConfig } from "@/lib/payments/config";
+import { createPixOrder } from "@/lib/payments/mercadopago";
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
+  type CreatePaymentNodeConfig,
+  type CreateReservationNodeConfig,
   type DispatchInboundInput,
   type DispatchInboundResult,
   type FlowNodeRow,
@@ -53,7 +60,9 @@ import {
   type SendListNodeConfig,
   type SendMediaNodeConfig,
   type SendMessageNodeConfig,
+  type SendVoucherNodeConfig,
   type SetTagNodeConfig,
+  type SetVarNodeConfig,
   type StartNodeConfig,
   type KeywordTriggerConfig,
 } from "./types";
@@ -116,16 +125,77 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "send_message" ||
     node_type === "send_media" ||
     node_type === "condition" ||
-    node_type === "set_tag"
+    node_type === "set_tag" ||
+    node_type === "set_var" ||
+    node_type === "create_reservation" ||
+    node_type === "send_voucher"
   );
 }
 
-/** Nodes that send a prompt and suspend awaiting a customer reply. */
+/**
+ * Parses a customer-typed date into `YYYY-MM-DD`, or `null` if it
+ * doesn't look like a date. Accepts the ISO form and Brazilian
+ * `DD/MM` / `DD/MM/YY` / `DD/MM/YYYY` — a `collect_input` node has no
+ * validation (v1.5 runner, see CollectInputNodeConfig), so a
+ * `create_reservation` node reading a free-typed date must tolerate
+ * what a WhatsApp customer actually types ("09/09", not "2026-09-09").
+ *
+ * A bare `DD/MM` with no year rolls forward to next year when that day
+ * has already passed this year — "9/9" typed in October means next
+ * September, not a September that already happened.
+ */
+export function parseFlexibleDateToISO(raw: string, now: Date = new Date()): string | null {
+  const s = raw.trim();
+
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    return isRealCalendarDate(Number(y), Number(m), Number(d)) ? s : null;
+  }
+
+  const brMatch = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (brMatch) {
+    const [, dStr, mStr, yStr] = brMatch;
+    const day = Number(dStr);
+    const month = Number(mStr);
+    let year: number;
+    if (yStr) {
+      year = yStr.length === 2 ? 2000 + Number(yStr) : Number(yStr);
+    } else {
+      year = now.getFullYear();
+      const candidate = new Date(year, month - 1, day);
+      // Already passed this year (strictly before today) → assume next year.
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (candidate < today) year += 1;
+    }
+    if (!isRealCalendarDate(year, month, day)) return null;
+    return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  return null;
+}
+
+/** Rejects e.g. 2026-02-30 — Date's constructor silently rolls those into March. */
+function isRealCalendarDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const d = new Date(year, month - 1, day);
+  return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
+}
+
+/**
+ * Nodes that suspend the run. `create_payment` is the one exception
+ * to the name — it does NOT wait for a customer WhatsApp reply, it
+ * waits for the Mercado Pago webhook (see `resumeFlowRunAfterPayment`)
+ * — but it persists `current_node_key` and returns the same way, so it
+ * belongs in this bucket for every caller that branches on "does this
+ * node end the synchronous advance loop".
+ */
 export function isSuspending(node_type: string): boolean {
   return (
     node_type === "send_buttons" ||
     node_type === "send_list" ||
-    node_type === "collect_input"
+    node_type === "collect_input" ||
+    node_type === "create_payment"
   );
 }
 
@@ -455,6 +525,311 @@ async function executeHandoff(
 }
 
 /**
+ * Merge one key into a run's vars, persist to `flow_runs.vars`, and
+ * mirror the merge onto the in-memory `run` so the rest of THIS
+ * dispatch pass (still holding the old object) sees it immediately —
+ * shared by every simple "write one var and move on" site
+ * (create_reservation's success/failure branches, the `set_var` node).
+ * A write failure is tolerated the same way at every call site: the
+ * in-memory mirror is skipped, so the run just resumes from a slightly
+ * stale `vars` next time rather than throwing here.
+ *
+ * Not used by collect_input's capture path — that one also resets
+ * `reprompt_count` and logs in the same UPDATE, genuinely more than
+ * "merge a var", so it stays its own inline block.
+ */
+async function mergeRunVar(
+  db: AdminClient,
+  run: FlowRunRow,
+  key: string,
+  value: unknown,
+): Promise<void> {
+  const newVars = { ...run.vars, [key]: value };
+  const { error } = await db.from("flow_runs").update({ vars: newVars }).eq("id", run.id);
+  if (!error) run.vars = newVars;
+}
+
+/**
+ * Runs `create_reservation`: reads pacote_horario/data/quantidade from
+ * vars, calls `criar_reserva()` (058_pacote_horarios_reservas.sql —
+ * row-locked, capacity-checked), and branches to success_next or
+ * failure_next. `vars.reserva_id` / `vars.reserva_erro` are set for
+ * downstream nodes (send_voucher reads reserva_id; a send_message on
+ * the failure branch can interpolate {{vars.reserva_erro}}).
+ *
+ * This is the ONLY place a flow may create a `reservas` row — never a
+ * direct insert, so the same capacity guard that protects a human
+ * agent's manual booking (src/components/reservas/reserva-form.tsx)
+ * also protects the automated closing path.
+ */
+async function executeCreateReservation(
+  db: AdminClient,
+  run: FlowRunRow,
+  cfg: CreateReservationNodeConfig,
+): Promise<{ nextKey: string }> {
+  const fail = async (motivo: string): Promise<{ nextKey: string }> => {
+    await mergeRunVar(db, run, "reserva_erro", motivo);
+    return { nextKey: cfg.failure_next };
+  };
+
+  const horarioId = cfg.pacote_horario_var_key
+    ? (run.vars[cfg.pacote_horario_var_key] as string | undefined)
+    : undefined;
+  const rawData = run.vars[cfg.data_var_key];
+  const rawQtd = run.vars[cfg.quantidade_var_key];
+
+  const dataISO =
+    typeof rawData === "string" ? parseFlexibleDateToISO(rawData) : null;
+  if (!dataISO) return fail("data_invalida");
+
+  const quantidade = typeof rawQtd === "string" ? Number(rawQtd.trim()) : NaN;
+  if (!Number.isFinite(quantidade) || quantidade <= 0) return fail("quantidade_invalida");
+
+  const { data: rows, error } = await db.rpc("criar_reserva", {
+    p_account_id: run.account_id,
+    p_pacote_id: cfg.pacote_id,
+    p_pacote_horario_id: horarioId || null,
+    p_data: dataISO,
+    p_quantidade_pessoas: quantidade,
+    p_contact_id: run.contact_id,
+    p_conversation_id: run.conversation_id,
+    p_created_by: null, // NULL = booked by the flow, not a human — drives the dashboard's "% fechado por IA/fluxo".
+  });
+  if (error) {
+    console.error("[flows] criar_reserva rpc error:", error.message);
+    return fail("erro_interno");
+  }
+  const result = (rows as { reserva_id: string | null; sucesso: boolean; motivo: string | null }[] | null)?.[0];
+  if (!result?.sucesso || !result.reserva_id) {
+    return fail(result?.motivo ?? "falha_desconhecida");
+  }
+
+  await mergeRunVar(db, run, "reserva_id", result.reserva_id);
+  return { nextKey: cfg.success_next };
+}
+
+interface ReservaForPayment {
+  id: string;
+  pacotes: { name: string; price: number } | null;
+  contacts: { email: string | null } | null;
+}
+
+/**
+ * Runs `create_payment`: creates a Mercado Pago Pix charge for the
+ * reservation and texts the customer the copia-e-cola code.
+ * `suspend: true` means the node parked the run here — the caller
+ * persists `current_node_key` and stops; `suspend: false` means the
+ * charge could not even be created, so the caller auto-advances to
+ * `failure_next` immediately (nothing to wait for).
+ *
+ * Payer email: WhatsApp bookings rarely have a real email on file.
+ * Mercado Pago's Order schema requires `payer.email`, so a contact
+ * with none gets a synthetic `reserva-<id>@pix.invalid` — Pix never
+ * emails the payer, so this is a schema formality, not a deliverable
+ * address. Revisit if Mercado Pago ever starts validating deliverability.
+ */
+async function executeCreatePayment(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+  cfg: CreatePaymentNodeConfig,
+): Promise<{ suspend: boolean; nextKey: string }> {
+  const reservaId = run.vars[cfg.reserva_var_key ?? "reserva_id"];
+  if (typeof reservaId !== "string" || !reservaId) {
+    await logEvent(db, run.id, "error", node.node_key, { reason: "no_reserva_id_in_vars" });
+    return { suspend: false, nextKey: cfg.failure_next };
+  }
+
+  // Independent reads (neither depends on the other's result) — run
+  // concurrently instead of paying two sequential round-trips. The
+  // reservas query runs even when payment turns out unconfigured; it's
+  // a read with no side effect, so the wasted query on that failure
+  // path is cheaper than serializing the common (configured) path.
+  const [paymentConfig, reservaResult] = await Promise.all([
+    loadPaymentConfig(db, run.account_id),
+    db
+      .from("reservas")
+      .select("id, pacotes(name, price), contacts(email)")
+      .eq("id", reservaId)
+      .maybeSingle(),
+  ]);
+  if (!paymentConfig) {
+    await logEvent(db, run.id, "error", node.node_key, { reason: "payments_not_configured" });
+    return { suspend: false, nextKey: cfg.failure_next };
+  }
+
+  const { data, error } = reservaResult;
+  if (error || !data) {
+    await logEvent(db, run.id, "error", node.node_key, { reason: "reserva_not_found" });
+    return { suspend: false, nextKey: cfg.failure_next };
+  }
+  const reserva = data as unknown as ReservaForPayment;
+  const amount = reserva.pacotes?.price ?? 0;
+  if (amount <= 0) {
+    await logEvent(db, run.id, "error", node.node_key, { reason: "invalid_amount" });
+    return { suspend: false, nextKey: cfg.failure_next };
+  }
+
+  const payerEmail = reserva.contacts?.email?.trim() || `reserva-${reservaId}@pix.invalid`;
+
+  try {
+    const order = await createPixOrder({
+      accessToken: paymentConfig.accessToken,
+      amount,
+      description: reserva.pacotes?.name ?? "Reserva",
+      payerEmail,
+      externalReference: reservaId,
+    });
+
+    await db
+      .from("reservas")
+      .update({
+        pagamento_status: "pendente",
+        mp_order_id: order.orderId,
+        mp_payment_id: order.paymentId,
+        pagamento_valor: amount,
+        pagamento_pix_copia_cola: order.qrCode,
+      })
+      .eq("id", reservaId);
+
+    await engineSendText({
+      accountId: run.account_id,
+      userId: run.user_id,
+      conversationId: run.conversation_id!,
+      contactId: run.contact_id!,
+      text:
+        "Pra confirmar sua reserva, é só pagar via Pix (copia e cola abaixo, cole no seu banco) — assim que cair, eu confirmo automaticamente! 💳\n\n" +
+        order.qrCode,
+    });
+
+    return { suspend: true, nextKey: node.node_key };
+  } catch (err) {
+    console.error("[flows] createPixOrder failed:", err instanceof Error ? err.message : err);
+    await logEvent(db, run.id, "error", node.node_key, {
+      reason: "mercadopago_create_failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return { suspend: false, nextKey: cfg.failure_next };
+  }
+}
+
+interface ReservaForVoucher {
+  id: string;
+  data: string;
+  quantidade_pessoas: number;
+  account_id: string;
+  contact_id: string | null;
+  pacotes: { name: string; description: string | null; price: number } | null;
+  pacote_horarios: { hora_saida: string; hora_volta: string | null } | null;
+  contacts: { name: string | null; phone: string } | null;
+  accounts: {
+    name: string;
+    cnpj: string | null;
+    telefone: string | null;
+    endereco: string | null;
+    logo_url: string | null;
+    pix_key: string | null;
+    politica_cancelamento: string | null;
+  } | null;
+}
+
+/**
+ * Best-effort logo fetch for the voucher header. The `agency-logo`
+ * bucket is public (060_agency_profile_and_contact_fiscal.sql), so a
+ * plain fetch needs no signing. Returns null on any failure — a
+ * missing/unreachable logo must never block the voucher itself.
+ */
+async function fetchLogoBytes(logoUrl: string | null): Promise<Uint8Array | null> {
+  if (!logoUrl) return null;
+  try {
+    const res = await fetch(logoUrl);
+    if (!res.ok) return null;
+    return new Uint8Array(await res.arrayBuffer());
+  } catch (err) {
+    console.error("[flows] voucher logo fetch failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * Runs `send_voucher`: loads the reservation created earlier in the
+ * run, renders its voucher PDF (src/lib/flows/voucher.ts), uploads it
+ * to the private `vouchers` bucket, and sends it as a WhatsApp
+ * document via a freshly-signed URL — the same private-bucket +
+ * signMediaUrl pattern already proven live for pacote photos this
+ * session. Throws on failure; the caller treats that as non-fatal
+ * (the booking itself already succeeded).
+ */
+async function executeSendVoucher(
+  db: AdminClient,
+  run: FlowRunRow,
+  cfg: SendVoucherNodeConfig,
+): Promise<void> {
+  const reservaId = run.vars[cfg.reserva_var_key ?? "reserva_id"];
+  if (typeof reservaId !== "string" || !reservaId) {
+    throw new Error("no reserva_id in vars");
+  }
+
+  const { data, error } = await db
+    .from("reservas")
+    .select(
+      "id, data, quantidade_pessoas, account_id, contact_id, pacotes(name, description, price), pacote_horarios(hora_saida, hora_volta), contacts(name, phone), accounts(name, cnpj, telefone, endereco, logo_url, pix_key, politica_cancelamento)",
+    )
+    .eq("id", reservaId)
+    .maybeSingle();
+  if (error || !data) throw new Error("reserva not found for voucher");
+  const reserva = data as unknown as ReservaForVoucher;
+
+  const logoBytes = await fetchLogoBytes(reserva.accounts?.logo_url ?? null);
+
+  const pdfBytes = await renderVoucherPdf({
+    agenciaNome: reserva.accounts?.name ?? "Agência",
+    agenciaCnpj: reserva.accounts?.cnpj ?? null,
+    agenciaTelefone: reserva.accounts?.telefone ?? null,
+    agenciaEndereco: reserva.accounts?.endereco ?? null,
+    agenciaPixKey: reserva.accounts?.pix_key ?? null,
+    agenciaPoliticaCancelamento: reserva.accounts?.politica_cancelamento ?? null,
+    pacoteNome: reserva.pacotes?.name ?? "Passeio",
+    pacoteDescricao: reserva.pacotes?.description ?? null,
+    data: reserva.data,
+    horaSaida: reserva.pacote_horarios?.hora_saida ?? null,
+    horaVolta: reserva.pacote_horarios?.hora_volta ?? null,
+    quantidadePessoas: reserva.quantidade_pessoas,
+    precoTotal: reserva.pacotes?.price ?? 0,
+    clienteNome: reserva.contacts?.name ?? null,
+    reservaId: reserva.id,
+    logoBytes,
+  });
+
+  const path = `account-${reserva.account_id}/${reserva.id}.pdf`;
+  const { error: uploadErr } = await db.storage
+    .from("vouchers")
+    .upload(path, Buffer.from(pdfBytes), { contentType: "application/pdf", upsert: true });
+  if (uploadErr) throw new Error(`voucher upload failed: ${uploadErr.message}`);
+
+  const {
+    data: { publicUrl },
+  } = db.storage.from("vouchers").getPublicUrl(path);
+  // Neither depends on the other's result — the DB stamp and the
+  // signed-URL mint both only need `publicUrl`, computed above.
+  const [, signedUrl] = await Promise.all([
+    db.from("reservas").update({ voucher_url: publicUrl }).eq("id", reserva.id),
+    signMediaUrl(publicUrl, MEDIA_URL_TTL.outboundSend),
+  ]);
+
+  await engineSendMedia({
+    accountId: run.account_id,
+    userId: run.user_id,
+    conversationId: run.conversation_id!,
+    contactId: run.contact_id!,
+    kind: "document",
+    link: signedUrl,
+    filename: voucherFilename(reserva.id),
+    caption: "Aqui está o voucher da sua reserva! 🎉",
+  });
+}
+
+/**
  * Resolve a condition node's subject value from DB / run state, then
  * call the pure `evaluateConditionPredicate`. Splits out so the
  * predicate itself stays unit-testable without a Supabase mock.
@@ -543,6 +918,32 @@ async function endRun(
 // terminates (handoff/end). Each suspending node persists the
 // new current_node_key before returning.
 // ============================================================
+
+/**
+ * Persist the run's new current_node_key (optimistic UPDATE, see
+ * advanceCurrentNodeKey below) and report the "advanced" outcome —
+ * shared by every node type that suspends here (collect_input,
+ * create_payment, send_buttons, send_list) so the race-lost log line
+ * and the outcome shape can't drift between them.
+ */
+async function advanceAndSuspend(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+): Promise<{ outcome: "advanced" }> {
+  const advanced = await advanceCurrentNodeKey(
+    db,
+    run.id,
+    run.current_node_key,
+    node.node_key,
+  );
+  if (!advanced) {
+    await logEvent(db, run.id, "error", node.node_key, {
+      reason: "lost_race_during_advance",
+    });
+  }
+  return { outcome: "advanced" };
+}
 
 async function advanceFromNodeKey(
   db: AdminClient,
@@ -668,18 +1069,7 @@ async function advanceFromNodeKey(
         await endRun(db, run.id, "failed", "collect_input_prompt_failed");
         return { outcome: "completed" };
       }
-      const advanced = await advanceCurrentNodeKey(
-        db,
-        run.id,
-        run.current_node_key,
-        node.node_key,
-      );
-      if (!advanced) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "lost_race_during_advance",
-        });
-      }
-      return { outcome: "advanced" };
+      return await advanceAndSuspend(db, run, node);
     }
     if (node.node_type === "condition") {
       const cfg = node.config as unknown as ConditionNodeConfig;
@@ -732,36 +1122,50 @@ async function advanceFromNodeKey(
       currentKey = cfg.next_node_key;
       continue;
     }
-    if (node.node_type === "send_buttons") {
-      await sendButtonsAndSuspend(db, run, node);
-      // Persist the new current_node_key via optimistic UPDATE.
-      const advanced = await advanceCurrentNodeKey(
-        db,
-        run.id,
-        run.current_node_key,
-        node.node_key,
-      );
-      if (!advanced) {
+    if (node.node_type === "set_var") {
+      const cfg = node.config as unknown as SetVarNodeConfig;
+      await mergeRunVar(db, run, cfg.var_key, cfg.value);
+      currentKey = cfg.next_node_key;
+      continue;
+    }
+    if (node.node_type === "create_reservation") {
+      const cfg = node.config as unknown as CreateReservationNodeConfig;
+      const outcome = await executeCreateReservation(db, run, cfg);
+      currentKey = outcome.nextKey;
+      continue;
+    }
+    if (node.node_type === "create_payment") {
+      const cfg = node.config as unknown as CreatePaymentNodeConfig;
+      const outcome = await executeCreatePayment(db, run, node, cfg);
+      if (outcome.suspend) {
+        return await advanceAndSuspend(db, run, node);
+      }
+      currentKey = outcome.nextKey;
+      continue;
+    }
+    if (node.node_type === "send_voucher") {
+      const cfg = node.config as unknown as SendVoucherNodeConfig;
+      try {
+        await executeSendVoucher(db, run, cfg);
+      } catch (err) {
+        // Non-fatal — the booking already exists; a voucher-send
+        // failure shouldn't strand the customer mid-flow or make it
+        // look like the reservation itself failed.
         await logEvent(db, run.id, "error", node.node_key, {
-          reason: "lost_race_during_advance",
+          reason: "send_voucher_failed",
+          detail: err instanceof Error ? err.message : String(err),
         });
       }
-      return { outcome: "advanced" };
+      currentKey = cfg.next_node_key;
+      continue;
+    }
+    if (node.node_type === "send_buttons") {
+      await sendButtonsAndSuspend(db, run, node);
+      return await advanceAndSuspend(db, run, node);
     }
     if (node.node_type === "send_list") {
       await sendListAndSuspend(db, run, node);
-      const advanced = await advanceCurrentNodeKey(
-        db,
-        run.id,
-        run.current_node_key,
-        node.node_key,
-      );
-      if (!advanced) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "lost_race_during_advance",
-        });
-      }
-      return { outcome: "advanced" };
+      return await advanceAndSuspend(db, run, node);
     }
     if (node.node_type === "handoff") {
       await executeHandoff(db, run, node);
@@ -878,6 +1282,100 @@ export async function dispatchInboundToFlows(
       err instanceof Error ? err.message : err,
     );
     return { consumed: false, outcome: "no_match" };
+  }
+}
+
+/**
+ * Starts the account's active flow whose `ai_topic` matches — called
+ * by the AI auto-reply path (src/lib/ai/auto-reply.ts) when the model
+ * emits the `[[RESERVAR:<topic>]]` sentinel, instead of requiring the
+ * customer to type an exact keyword trigger. Reuses `startNewRun`
+ * verbatim (same idempotency/uniqueness guarantees as the keyword
+ * path) — the only difference is HOW the flow is found.
+ *
+ * Declines to start (consumed: false) when the contact already has an
+ * active run — the AI shouldn't have offered the sentinel mid-flow,
+ * but if it did, this is the safe no-op rather than a second
+ * concurrent run for the same contact.
+ */
+export async function startFlowByAiTopic(
+  input: DispatchInboundInput & { topic: string },
+): Promise<DispatchInboundResult> {
+  const db = supabaseAdmin();
+  try {
+    const activeRun = await loadActiveRunForContact(db, input.accountId, input.contactId);
+    if (activeRun) {
+      return { consumed: false, outcome: "no_match" };
+    }
+
+    const { data: flow, error } = await db
+      .from("flows")
+      .select("*")
+      .eq("account_id", input.accountId)
+      .eq("status", "active")
+      .eq("ai_topic", input.topic)
+      .maybeSingle();
+    if (error || !flow || !(flow as FlowRow).entry_node_id) {
+      return { consumed: false, outcome: "no_match" };
+    }
+
+    const nodes = await loadAllNodes(db, (flow as FlowRow).id);
+    return startNewRun(db, flow as FlowRow, input, nodes);
+  } catch (err) {
+    console.error(
+      "[flows] startFlowByAiTopic threw:",
+      err instanceof Error ? err.message : err,
+    );
+    return { consumed: false, outcome: "no_match" };
+  }
+}
+
+/**
+ * Resumes a flow run that's parked at a `create_payment` node, called
+ * by the Mercado Pago webhook handler once it has independently
+ * confirmed (via `getOrder`, never trusting the webhook body alone)
+ * that the charge is `approved`. Finds the run by matching
+ * `flow_runs.vars->>'reserva_id'` — the same field `create_reservation`
+ * sets and `create_payment`/`send_voucher` already key off of.
+ *
+ * Returns false (does nothing) when there's no active run parked
+ * there — a webhook retry after the first one already resumed the
+ * run, or the run timed out/was handed off in the meantime. Either
+ * way, silently doing nothing is correct: there's no run left to
+ * advance.
+ */
+export async function resumeFlowRunAfterPayment(reservaId: string): Promise<boolean> {
+  const db = supabaseAdmin();
+  try {
+    const { data: runs, error } = await db
+      .from("flow_runs")
+      .select("*")
+      .eq("status", "active")
+      .filter("vars->>reserva_id", "eq", reservaId)
+      .limit(1);
+    if (error) {
+      console.error("[flows] resumeFlowRunAfterPayment lookup error:", error.message);
+      return false;
+    }
+    const run = (runs as FlowRunRow[] | null)?.[0];
+    if (!run || !run.current_node_key) return false;
+
+    const nodes = await loadAllNodes(db, run.flow_id);
+    const currentNode = nodes.get(run.current_node_key);
+    if (!currentNode || currentNode.node_type !== "create_payment") {
+      // Not parked at a payment node (already advanced, or a stale
+      // notification for a run that moved on) — nothing to resume.
+      return false;
+    }
+    const cfg = currentNode.config as unknown as CreatePaymentNodeConfig;
+    await advanceFromNodeKey(db, run, cfg.success_next, nodes);
+    return true;
+  } catch (err) {
+    console.error(
+      "[flows] resumeFlowRunAfterPayment threw:",
+      err instanceof Error ? err.message : err,
+    );
+    return false;
   }
 }
 
