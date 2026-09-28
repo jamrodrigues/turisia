@@ -205,6 +205,91 @@ export function NodeConfigForm({
           concluída. Nenhuma configuração necessária.
         </p>
       );
+
+    case "set_var":
+      return (
+        <>
+          <TextRow
+            label="Chave da variável (flow_runs.vars)"
+            value={(cfg as { var_key?: string }).var_key ?? ""}
+            onChange={(v) => onUpdateConfig({ var_key: v.replace(/[^a-zA-Z0-9_]/g, "") })}
+          />
+          <TextRow
+            label="Valor fixo a gravar"
+            value={(cfg as { value?: string }).value ?? ""}
+            onChange={(v) => onUpdateConfig({ value: v })}
+          />
+          <NextNodeRow
+            value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onChange={(v) => onUpdateConfig({ next_node_key: v })}
+            label="Avança para"
+          />
+        </>
+      );
+
+    case "create_reservation":
+      return (
+        <>
+          <p className="text-xs text-muted-foreground">
+            Gerado automaticamente pelo fechamento do pacote (botão &quot;Gerar
+            fechamento automático&quot; na página do pacote) — o pacote e as
+            variáveis lidas não são editáveis aqui. Só a bifurcação de
+            sucesso/falha abaixo é segura de mexer.
+          </p>
+          <NextNodeRow
+            value={(cfg as { success_next?: string }).success_next ?? ""}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onChange={(v) => onUpdateConfig({ success_next: v })}
+            label="Se reservou com sucesso, avança para"
+          />
+          <NextNodeRow
+            value={(cfg as { failure_next?: string }).failure_next ?? ""}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onChange={(v) => onUpdateConfig({ failure_next: v })}
+            label="Se não tinha vaga, avança para"
+          />
+        </>
+      );
+
+    case "create_payment":
+      return (
+        <>
+          <p className="text-xs text-muted-foreground">
+            Gera uma cobrança Pix (Mercado Pago) pra reserva criada
+            anteriormente no fluxo e aguarda o webhook de confirmação — não
+            reage a mensagens do cliente enquanto espera.
+          </p>
+          <NextNodeRow
+            value={(cfg as { success_next?: string }).success_next ?? ""}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onChange={(v) => onUpdateConfig({ success_next: v })}
+            label="Quando o pagamento for confirmado, avança para"
+          />
+          <NextNodeRow
+            value={(cfg as { failure_next?: string }).failure_next ?? ""}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onChange={(v) => onUpdateConfig({ failure_next: v })}
+            label="Se não conseguir gerar a cobrança, avança para"
+          />
+        </>
+      );
+
+    case "send_voucher":
+      return (
+        <NextNodeRow
+          value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onChange={(v) => onUpdateConfig({ next_node_key: v })}
+          label="Depois de enviar o voucher, avança para"
+        />
+      );
   }
 }
 

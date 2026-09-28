@@ -17,6 +17,10 @@
  */
 
 import {
+  Braces,
+  CalendarCheck,
+  CreditCard,
+  FileText,
   Flag,
   GitFork,
   Inbox,
@@ -40,6 +44,10 @@ import { cn } from '@/lib/utils';
 // two is always a bug.
 // ============================================================
 
+// `http_fetch` is in the DB CHECK constraint (010_flows.sql) and
+// FlowNodeType's doc comment as a reserved v1.5+ slot, but nothing
+// ever generates one — the engine has no case for it — so it's left
+// out here too until a real implementation lands on both sides.
 export type NodeType =
   | 'start'
   | 'send_message'
@@ -49,6 +57,10 @@ export type NodeType =
   | 'collect_input'
   | 'condition'
   | 'set_tag'
+  | 'set_var'
+  | 'create_reservation'
+  | 'create_payment'
+  | 'send_voucher'
   | 'handoff'
   | 'end';
 
@@ -152,6 +164,34 @@ export const NODE_META: Record<
     blurb: 'Adiciona ou remove uma etiqueta do contato',
     category: 'logic',
   },
+  set_var: {
+    label: 'Definir variável',
+    icon: Braces,
+    color: 'text-blue-400',
+    blurb: 'Grava um valor fixo em flow_runs.vars',
+    category: 'logic',
+  },
+  create_reservation: {
+    label: 'Criar reserva',
+    icon: CalendarCheck,
+    color: 'text-green-400',
+    blurb: 'Reserva o pacote via criar_reserva() — só o fechamento automático usa este nó',
+    category: 'flow',
+  },
+  create_payment: {
+    label: 'Cobrar Pix',
+    icon: CreditCard,
+    color: 'text-yellow-400',
+    blurb: 'Gera uma cobrança Pix (Mercado Pago) e aguarda o pagamento',
+    category: 'flow',
+  },
+  send_voucher: {
+    label: 'Enviar voucher',
+    icon: FileText,
+    color: 'text-fuchsia-300',
+    blurb: 'Gera e envia o PDF do voucher da reserva',
+    category: 'flow',
+  },
   handoff: {
     label: 'Transferir para agente',
     icon: UserPlus,
@@ -205,6 +245,10 @@ const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
   collect_input: { l: 0.65, c: 0.1, h: 185 }, // teal — capture
   condition: { l: 0.72, c: 0.15, h: 65 }, // amber — a fork in the road
   set_tag: { l: 0.65, c: 0.15, h: 350 }, // pink
+  set_var: { l: 0.62, c: 0.12, h: 230 }, // blue — distinct from send_list's indigo
+  create_reservation: { l: 0.6, c: 0.14, h: 145 }, // green — booking confirmed
+  create_payment: { l: 0.68, c: 0.16, h: 90 }, // gold — money
+  send_voucher: { l: 0.62, c: 0.14, h: 320 }, // magenta — the deliverable
   handoff: { l: 0.65, c: 0.17, h: 16 }, // rose — hands off
   end: { l: 0.55, c: 0.01, h: 260 }, // neutral grey — terminal
 };
@@ -418,6 +462,21 @@ export function summarizeNode(node: BuilderNode): string | null {
         ? `${mode} etiqueta ${tagId.slice(0, 8)}…`
         : `${mode} etiqueta (nenhuma selecionada)`;
     }
+    case 'set_var': {
+      const varKey = typeof cfg.var_key === 'string' ? cfg.var_key : '';
+      const value = typeof cfg.value === 'string' ? cfg.value : '';
+      return varKey ? `vars.${varKey} = "${truncate(value, 40)}"` : null;
+    }
+    case 'create_reservation': {
+      const dataKey = typeof cfg.data_var_key === 'string' ? cfg.data_var_key : '';
+      const qtdKey = typeof cfg.quantidade_var_key === 'string' ? cfg.quantidade_var_key : '';
+      const parts = [dataKey && `data: vars.${dataKey}`, qtdKey && `pessoas: vars.${qtdKey}`].filter(Boolean);
+      return parts.length > 0 ? `Reserva o pacote (${parts.join(', ')})` : 'Reserva o pacote';
+    }
+    case 'create_payment':
+      return 'Cobra via Pix (Mercado Pago) e aguarda o pagamento';
+    case 'send_voucher':
+      return 'Gera e envia o voucher em PDF';
     case 'handoff': {
       const note = typeof cfg.note === 'string' ? cfg.note : '';
       return note.length > 0 ? truncate(note) : null;

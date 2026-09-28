@@ -48,7 +48,9 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
       case "send_message":
       case "send_media":
       case "collect_input":
-      case "set_tag": {
+      case "set_tag":
+      case "set_var":
+      case "send_voucher": {
         const next = (cfg as { next_node_key?: string }).next_node_key;
         if (next && knownKeys.has(next)) {
           edges.push({
@@ -56,6 +58,30 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
             source: node.node_key,
             target: next,
             sourceHandle: "next",
+          });
+        }
+        break;
+      }
+
+      case "create_reservation":
+      case "create_payment": {
+        const c = cfg as { success_next?: string; failure_next?: string };
+        if (c.success_next && knownKeys.has(c.success_next)) {
+          edges.push({
+            id: `${node.node_key}--success--${c.success_next}`,
+            source: node.node_key,
+            target: c.success_next,
+            sourceHandle: "success",
+            label: "sucesso",
+          });
+        }
+        if (c.failure_next && knownKeys.has(c.failure_next)) {
+          edges.push({
+            id: `${node.node_key}--failure--${c.failure_next}`,
+            source: node.node_key,
+            target: c.failure_next,
+            sourceHandle: "failure",
+            label: "falha",
           });
         }
         break;
@@ -179,12 +205,21 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     case "send_media":
     case "collect_input":
     case "set_tag":
+    case "set_var":
+    case "send_voucher":
       return [{ id: "next", label: "Next" }];
 
     case "condition":
       return [
         { id: "true", label: "true" },
         { id: "false", label: "false" },
+      ];
+
+    case "create_reservation":
+    case "create_payment":
+      return [
+        { id: "success", label: "sucesso" },
+        { id: "failure", label: "falha" },
       ];
 
     case "send_buttons": {
@@ -253,12 +288,20 @@ export function applyEdgeConnection(
     case "send_media":
     case "collect_input":
     case "set_tag":
+    case "set_var":
+    case "send_voucher":
       if (sourceHandle === "next") return { next_node_key: targetKey };
       return null;
 
     case "condition":
       if (sourceHandle === "true") return { true_next: targetKey };
       if (sourceHandle === "false") return { false_next: targetKey };
+      return null;
+
+    case "create_reservation":
+    case "create_payment":
+      if (sourceHandle === "success") return { success_next: targetKey };
+      if (sourceHandle === "failure") return { failure_next: targetKey };
       return null;
 
     case "send_buttons": {
@@ -346,10 +389,25 @@ function patchedConfigWithoutKey(
     case "send_message":
     case "send_media":
     case "collect_input":
-    case "set_tag": {
+    case "set_tag":
+    case "set_var":
+    case "send_voucher": {
       const next = (cfg as { next_node_key?: string }).next_node_key;
       if (next !== deletedKey) return null;
       return { ...cfg, next_node_key: "" };
+    }
+
+    case "create_reservation":
+    case "create_payment": {
+      const c = cfg as { success_next?: string; failure_next?: string };
+      const successMatch = c.success_next === deletedKey;
+      const failureMatch = c.failure_next === deletedKey;
+      if (!successMatch && !failureMatch) return null;
+      return {
+        ...cfg,
+        ...(successMatch ? { success_next: "" } : {}),
+        ...(failureMatch ? { failure_next: "" } : {}),
+      };
     }
 
     case "condition": {

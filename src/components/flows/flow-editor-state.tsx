@@ -182,6 +182,28 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
       };
     case "set_tag":
       return { mode: "add", tag_id: "", next_node_key: "" };
+    case "set_var":
+      return { var_key: "", value: "", next_node_key: "" };
+    // Not offered in either "+ Add node" menu (ADD_NODE_TYPES in
+    // flow-canvas.tsx / flow-builder.tsx) — a manually-added one would
+    // have no pacote_id / payment_config wiring and couldn't do
+    // anything. These only ever come from generateClosingFlowForPacote.
+    // Covered here anyway so this switch stays exhaustive over
+    // NodeType (shared.tsx's comment: divergence from FlowNodeType is
+    // always a bug) and `addNode` never crashes if that changes later.
+    case "create_reservation":
+      return {
+        pacote_id: "",
+        pacote_horario_var_key: "",
+        data_var_key: "data",
+        quantidade_var_key: "quantidade",
+        success_next: "",
+        failure_next: "",
+      };
+    case "create_payment":
+      return { success_next: "", failure_next: "" };
+    case "send_voucher":
+      return { next_node_key: "" };
     case "handoff":
       return { note: "" };
     case "end":
