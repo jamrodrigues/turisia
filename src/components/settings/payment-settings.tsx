@@ -144,7 +144,7 @@ export function PaymentSettings() {
           </CardTitle>
           <CardDescription className="text-muted-foreground">
             {canEdit
-              ? 'Access Token da sua conta Mercado Pago (Your integrations → Credenciais). Nunca é reexibido depois de salvo.'
+              ? 'Access Token da sua conta Mercado Pago (Suas integrações → Credenciais). Nunca é reexibido depois de salvo.'
               : 'Apenas administradores da conta podem configurar pagamentos.'}
           </CardDescription>
         </CardHeader>
@@ -195,7 +195,7 @@ export function PaymentSettings() {
 
           <div className="grid gap-2">
             <Label htmlFor="mp-secret" className="text-muted-foreground">
-              Webhook signature secret
+              Chave secreta do webhook
             </Label>
             <Input
               id="mp-secret"
@@ -212,11 +212,11 @@ export function PaymentSettings() {
                 }
               }}
               disabled={disabled}
-              placeholder="Your integrations → Webhooks → Configurar notificação"
+              placeholder="Suas integrações → Webhooks → Configurar notificação"
               className="bg-muted border-border text-foreground"
             />
             <p className="text-xs text-muted-foreground">
-              Configure a URL de notificação no Mercado Pago (Your integrations → Webhooks) como:{' '}
+              Configure a URL de notificação no Mercado Pago (Suas integrações → Webhooks) como:{' '}
               <code className="block break-all rounded bg-muted px-1 py-0.5 mt-1">
                 {typeof window !== 'undefined' ? window.location.origin : ''}/api/payments/webhook/{accountId ?? '{sua-conta}'}
               </code>

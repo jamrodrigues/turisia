@@ -3,7 +3,7 @@
  * the currency picker options.
  *
  * Before this module, ~6 components each defined their own
- * `Intl.NumberFormat(..., { currency: "USD" })` helper with USD
+ * `Intl.NumberFormat(..., { currency: "BRL" })` helper with BRL
  * baked in. The default currency is now configurable per account
  * (accounts.default_currency, migration 021), so every formatter
  * takes a currency and falls back to DEFAULT_CURRENCY only when
@@ -11,7 +11,7 @@
  */
 
 /** App-wide fallback when no account/deal currency is available. */
-export const DEFAULT_CURRENCY = "USD";
+export const DEFAULT_CURRENCY = "BRL";
 
 export interface CurrencyOption {
   /** ISO-4217 code, e.g. "USD". Stored verbatim in the DB. */
@@ -28,13 +28,13 @@ export interface CurrencyOption {
  * list to offer more — nothing else needs to change.
  */
 export const CURRENCIES: CurrencyOption[] = [
+  { code: "BRL", label: "Brazilian Real", symbol: "R$" },
   { code: "USD", label: "US Dollar", symbol: "$" },
   { code: "EUR", label: "Euro", symbol: "€" },
   { code: "GBP", label: "British Pound", symbol: "£" },
   { code: "INR", label: "Indian Rupee", symbol: "₹" },
   { code: "AUD", label: "Australian Dollar", symbol: "A$" },
   { code: "CAD", label: "Canadian Dollar", symbol: "C$" },
-  { code: "BRL", label: "Brazilian Real", symbol: "R$" },
   { code: "JPY", label: "Japanese Yen", symbol: "¥" },
   { code: "CNY", label: "Chinese Yuan", symbol: "¥" },
   { code: "AED", label: "UAE Dirham", symbol: "د.إ" },
@@ -47,7 +47,7 @@ export const CURRENCIES: CurrencyOption[] = [
 /**
  * Format a deal value as a currency string. Whole-number output
  * (no minor units) — deal values are tracked to the dollar across
- * the app. `currency` defaults to USD so callers with nothing better
+ * the app. `currency` defaults to BRL so callers with nothing better
  * stay safe, but pass the account/deal currency wherever known.
  *
  * Total by design: `Intl.NumberFormat` throws a RangeError on a
