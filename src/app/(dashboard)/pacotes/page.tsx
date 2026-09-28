@@ -26,6 +26,7 @@ import { PacoteMediaGallery } from "@/components/pacotes/pacote-media-gallery"
 import { PacoteHorariosEditor } from "@/components/pacotes/pacote-horarios-editor"
 import { PacoteClosingFlowButton } from "@/components/pacotes/pacote-closing-flow-button"
 import { PacoteCard } from "@/components/pacotes/pacote-card"
+import { generateClosingFlowForPacote } from "@/lib/flows/generate-closing-flow"
 
 interface FormState {
   name: string
@@ -46,7 +47,7 @@ const EMPTY_FORM: FormState = {
 }
 
 export default function PacotesPage() {
-  const { accountId } = useAuth()
+  const { accountId, user } = useAuth()
   const canManage = useCan("send-messages")
 
   const [pacotes, setPacotes] = useState<Pacote[] | null>(null)
@@ -138,20 +139,39 @@ export default function PacotesPage() {
         is_active: form.is_active,
       }
 
+      let pacoteId: string
       if (editing) {
         const { error: updateErr } = await supabase
           .from("pacotes")
           .update(payload)
           .eq("id", editing.id)
         if (updateErr) throw updateErr
+        pacoteId = editing.id
         toast.success("Pacote atualizado")
       } else {
         if (!accountId) throw new Error("Conta não identificada")
-        const { error: insertErr } = await supabase
+        const { data: inserted, error: insertErr } = await supabase
           .from("pacotes")
           .insert({ ...payload, account_id: accountId })
-        if (insertErr) throw insertErr
+          .select("id")
+          .single()
+        if (insertErr || !inserted) throw insertErr ?? new Error("Falha ao criar pacote")
+        pacoteId = inserted.id as string
         toast.success("Pacote criado")
+      }
+
+      // Best-effort — a pacote with a category should always have a
+      // closing flow, without the agent having to remember to click
+      // "Gerar" separately. Only a real ownership conflict (another
+      // pacote already claims this category) is worth interrupting the
+      // save for; anything else (e.g. no horários yet) just means the
+      // flow comes out with the 0-horário shape, generated next save.
+      if (payload.category && accountId && user) {
+        generateClosingFlowForPacote(supabase, { pacoteId, accountId, userId: user.id }).catch((err) => {
+          if (err instanceof Error && err.message.includes("já está em uso")) {
+            toast.error(err.message)
+          }
+        })
       }
 
       setFormOpen(false)
@@ -305,7 +325,7 @@ export default function PacotesPage() {
             {editing ? (
               <>
                 <PacoteMediaGallery pacoteId={editing.id} canManage={canManage} />
-                <PacoteHorariosEditor pacoteId={editing.id} canManage={canManage} />
+                <PacoteHorariosEditor pacoteId={editing.id} category={editing.category} canManage={canManage} />
                 <PacoteClosingFlowButton pacoteId={editing.id} canManage={canManage} />
               </>
             ) : (

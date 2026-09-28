@@ -5,6 +5,8 @@ import { toast } from "sonner"
 import { Clock, Loader2, Plus, Trash2 } from "lucide-react"
 
 import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@/hooks/use-auth"
+import { generateClosingFlowForPacote } from "@/lib/flows/generate-closing-flow"
 import type { PacoteHorario } from "@/types"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -34,14 +36,30 @@ function formatTime(t: string): string {
  */
 export function PacoteHorariosEditor({
   pacoteId,
+  category,
   canManage,
 }: {
   pacoteId: string
+  category?: string | null
   canManage: boolean
 }) {
+  const { accountId, user } = useAuth()
   const [slots, setSlots] = useState<PacoteHorario[] | null>(null)
   const [newSlot, setNewSlot] = useState<NewSlotForm>(EMPTY_SLOT)
   const [adding, setAdding] = useState(false)
+
+  // Best-effort regeneration after any slot change — a closing flow
+  // that's already been generated once should stay in sync with
+  // horários without the agent having to remember to hit "Gerar
+  // novamente". Only fires when the pacote already has a category
+  // (generateClosingFlowForPacote requires one); silent on any other
+  // failure, since this runs after actions that already have their own
+  // success/error feedback.
+  function regenerateFlow() {
+    if (!category?.trim() || !accountId || !user) return
+    const supabase = createClient()
+    void generateClosingFlowForPacote(supabase, { pacoteId, accountId, userId: user.id }).catch(() => {})
+  }
 
   async function load() {
     const supabase = createClient()
@@ -85,6 +103,7 @@ export function PacoteHorariosEditor({
       if (error) throw error
       setNewSlot(EMPTY_SLOT)
       await load()
+      regenerateFlow()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Falha ao adicionar horário")
     } finally {
@@ -102,7 +121,9 @@ export function PacoteHorariosEditor({
     if (error) {
       setSlots((prev) => prev?.map((s) => (s.id === slot.id ? { ...s, is_active: !next } : s)) ?? prev)
       toast.error("Não foi possível atualizar o horário")
+      return
     }
+    regenerateFlow()
   }
 
   async function handleDelete(slot: PacoteHorario) {
@@ -111,6 +132,7 @@ export function PacoteHorariosEditor({
       const { error } = await supabase.from("pacote_horarios").delete().eq("id", slot.id)
       if (error) throw error
       setSlots((prev) => prev?.filter((s) => s.id !== slot.id) ?? prev)
+      regenerateFlow()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Falha ao remover horário")
     }

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { formatBRL } from './voucher'
 
 // ============================================================
 // Generates a full "Fechar <pacote>" automated-closing flow graph —
@@ -29,6 +30,34 @@ function formatTime(t: string): string {
   return t.slice(0, 5)
 }
 
+const WEEKDAYS_PT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
+/**
+ * Next `count` calendar days starting today, as WhatsApp-list rows —
+ * replaces a free-typed date (customers mistype "31/02", "9/13", or
+ * just send "amanhã") with a bounded set of valid choices. ISO value
+ * per day so it round-trips through `parseFlexibleDateToISO` (engine.ts)
+ * without re-parsing a label.
+ */
+export function buildUpcomingDays(
+  count: number,
+  from: Date = new Date(),
+): { iso: string; label: string }[] {
+  const days: { iso: string; label: string }[] = []
+  for (let i = 0; i < count; i++) {
+    const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + i)
+    const dd = String(d.getDate()).padStart(2, '0')
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const iso = `${d.getFullYear()}-${mm}-${dd}`
+    const label =
+      i === 0 ? `Hoje ${dd}/${mm}` : i === 1 ? `Amanhã ${dd}/${mm}` : `${WEEKDAYS_PT[d.getDay()]} ${dd}/${mm}`
+    days.push({ iso, label })
+  }
+  return days
+}
+
+const DATE_OPTIONS_COUNT = 7
+
 /**
  * Builds the node graph for a closing flow. Branches on how many
  * active horários the package has:
@@ -38,9 +67,16 @@ function formatTime(t: string): string {
  *     directly, skipping a "choose between 1 option" prompt.
  *   - 2+: a send_list lets the customer pick, each row landing on its
  *     own set_var node before they converge on the same next step.
+ *
+ * `ask_data` is a send_list of the next 7 days (same picker pattern),
+ * not free text — a WhatsApp customer mistyping a date used to dead-end
+ * `create_reservation` into "sem vagas" with no way to tell a typo from
+ * a real sellout.
  */
 export function buildClosingFlowNodes(
   pacoteId: string,
+  pacoteName: string,
+  price: number,
   horarios: HorarioForFlow[],
   /**
    * Insert the Pix charge step between booking and voucher. Only true
@@ -52,6 +88,7 @@ export function buildClosingFlowNodes(
    * booking into "payments not configured".
    */
   requirePayment: boolean = false,
+  now: Date = new Date(),
 ): FlowNodeSeed[] {
   const nodes: FlowNodeSeed[] = []
 
@@ -99,17 +136,37 @@ export function buildClosingFlowNodes(
     })
   }
 
+  const days = buildUpcomingDays(DATE_OPTIONS_COUNT, now)
+
   nodes.push(
-    { node_key: 'start', node_type: 'start', config: { next_node_key: startNext } },
+    { node_key: 'start', node_type: 'start', config: { next_node_key: 'intro' } },
     {
-      node_key: 'ask_data',
-      node_type: 'collect_input',
+      node_key: 'intro',
+      node_type: 'send_message',
       config: {
-        prompt_text: 'Pra qual data? (ex: 09/09 ou 09/09/2026)',
-        var_key: 'data',
-        next_node_key: 'ask_qtd',
+        text: `🎒 *${pacoteName}* — ${formatBRL(price)} por pessoa. Vamos fechar sua reserva?`,
+        next_node_key: startNext,
       },
     },
+    {
+      node_key: 'ask_data',
+      node_type: 'send_list',
+      config: {
+        text: 'Pra qual dia?',
+        button_label: 'Escolher data',
+        sections: [
+          {
+            title: 'Datas',
+            rows: days.map((d, i) => ({ reply_id: `d_${i}`, title: d.label, next_node_key: `set_data_${i}` })),
+          },
+        ],
+      },
+    },
+    ...days.map((d, i) => ({
+      node_key: `set_data_${i}`,
+      node_type: 'set_var',
+      config: { var_key: 'data', value: d.iso, next_node_key: 'ask_qtd' },
+    })),
     {
       node_key: 'ask_qtd',
       node_type: 'collect_input',
@@ -132,7 +189,7 @@ export function buildClosingFlowNodes(
       node_key: 'confirmado',
       node_type: 'send_message',
       config: {
-        text: 'Reserva confirmada! 🎉 O voucher com todos os detalhes acabou de chegar aqui em cima. Qualquer dúvida, é só chamar!',
+        text: 'Reserva confirmada! 🎉 O voucher com todos os detalhes acabou de chegar aqui em cima. Qualquer dúvida, é só chamar!\n\nQuer aproveitar e ver outros passeios? Manda "pacotes" que eu te mostro o catálogo. 😉',
         next_node_key: 'fim',
       },
     },
@@ -210,7 +267,7 @@ export async function generateClosingFlowForPacote(
 
   const { data: pacote, error: pacoteErr } = await supabase
     .from('pacotes')
-    .select('id, name, category')
+    .select('id, name, category, price')
     .eq('id', pacoteId)
     .eq('account_id', accountId)
     .maybeSingle()
@@ -249,12 +306,26 @@ export async function generateClosingFlowForPacote(
   // status — regenerating a draft/archived one just refreshes it),
   // rather than creating a duplicate the unique-active-per-topic index
   // (061) would reject anyway once activated.
+  //
+  // `ai_topic` is the atomic booking unit (one active flow per topic,
+  // enforced by the 061 unique index) — two packages sharing a category
+  // would otherwise silently steal each other's flow, each "Gerar"
+  // click clobbering the other's pacote_id in `fazer_reserva` with no
+  // sign anything changed. `pacote_id` on the flow row (070) makes that
+  // ownership explicit and lets us refuse the second package instead.
   const { data: existing } = await supabase
     .from('flows')
-    .select('id')
+    .select('id, pacote_id, name')
     .eq('account_id', accountId)
     .eq('ai_topic', category)
     .maybeSingle()
+
+  if (existing?.pacote_id && existing.pacote_id !== pacoteId) {
+    throw new Error(
+      `A categoria "${category}" já está em uso pelo fechamento automático de "${existing.name as string}". ` +
+        `Use uma categoria diferente pra esse pacote, ou edite aquele.`,
+    )
+  }
 
   let flowId: string
   if (existing) {
@@ -268,6 +339,7 @@ export async function generateClosingFlowForPacote(
         trigger_type: 'keyword',
         trigger_config,
         entry_node_id: 'start',
+        pacote_id: pacoteId,
       })
       .eq('id', flowId)
     if (updErr) throw new Error('Falha ao atualizar o fluxo')
@@ -286,6 +358,7 @@ export async function generateClosingFlowForPacote(
         trigger_config,
         entry_node_id: 'start',
         ai_topic: category,
+        pacote_id: pacoteId,
       })
       .select('id')
       .single()
@@ -293,7 +366,7 @@ export async function generateClosingFlowForPacote(
     flowId = inserted.id as string
   }
 
-  const nodes = buildClosingFlowNodes(pacoteId, horarios, requirePayment)
+  const nodes = buildClosingFlowNodes(pacoteId, pacote.name as string, pacote.price as number, horarios, requirePayment)
   const { error: nodesErr } = await supabase
     .from('flow_nodes')
     .insert(nodes.map((n) => ({ flow_id: flowId, ...n })))
