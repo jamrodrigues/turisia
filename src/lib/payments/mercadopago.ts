@@ -129,6 +129,133 @@ export async function getOrder(accessToken: string, orderId: string): Promise<Or
   return { orderId, status, approved: status === 'approved' }
 }
 
+const PREFERENCES_URL = 'https://api.mercadopago.com/checkout/preferences'
+const PAYMENTS_URL = 'https://api.mercadopago.com/v1/payments'
+
+export interface CreateCheckoutPreferenceArgs {
+  accessToken: string
+  /** Reais, e.g. 180.00 */
+  amount: number
+  description: string
+  payerEmail: string
+  /** Our reserva id — round-trips back as `external_reference`; this
+   *  is the ONLY thing the webhook has to reconcile a Checkout Pro
+   *  payment back to a reserva (unlike the Pix/Orders-API path, no
+   *  payment id exists yet at creation time — the customer hasn't
+   *  paid). */
+  externalReference: string
+  notificationUrl: string
+  /** Max installments Mercado Pago offers the customer at checkout
+   *  (the buyer's card/issuer may still offer fewer). 12x is a common
+   *  Brazilian-market default for a tourism-ticket price range. */
+  maxInstallments?: number
+}
+
+export interface CreateCheckoutPreferenceResult {
+  preferenceId: string
+  /** Hosted Mercado Pago checkout URL — send this link to the
+   *  customer (WhatsApp text), never build our own card form. */
+  initPoint: string
+}
+
+/**
+ * Creates a Mercado Pago Checkout Pro preference — a hosted payment
+ * page covering Pix, credit and debit card (with installments), and
+ * boleto, so we never touch card data ourselves (no PCI scope). Uses
+ * the older, long-stable Preferences API (`/checkout/preferences`),
+ * deliberately NOT the newer Orders API v2 the Pix path uses — Orders
+ * API v2 credit-card charges require a tokenized card from a web form
+ * we don't have (the channel is WhatsApp, not a browser), while
+ * Checkout Pro's hosted page handles tokenization, 3DS, and
+ * installment options on Mercado Pago's own domain.
+ *
+ * NOTE: this shape (fields, `init_point`) is Mercado Pago's oldest,
+ * most stable product and hasn't materially changed in years, but —
+ * unlike `createPixOrder` above — it was NOT re-verified against a
+ * live API call while writing this (their docs site is JS-rendered
+ * and wasn't fetchable at the time). Run one real sandbox/live
+ * checkout before trusting this in production, same posture as any
+ * new payment integration in this codebase.
+ */
+export async function createCheckoutPreference(
+  args: CreateCheckoutPreferenceArgs,
+): Promise<CreateCheckoutPreferenceResult> {
+  const res = await fetch(PREFERENCES_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${args.accessToken}`,
+      'X-Idempotency-Key': `reserva-checkout-${args.externalReference}`,
+    },
+    body: JSON.stringify({
+      items: [
+        {
+          title: args.description,
+          quantity: 1,
+          unit_price: Number(args.amount.toFixed(2)),
+          currency_id: 'BRL',
+        },
+      ],
+      payer: { email: args.payerEmail },
+      external_reference: args.externalReference,
+      notification_url: args.notificationUrl,
+      payment_methods: {
+        installments: args.maxInstallments ?? 12,
+      },
+    }),
+  })
+
+  const body = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new MercadoPagoError(
+      `Mercado Pago preference creation failed (${res.status}): ${body?.message ?? 'unknown error'}`,
+      res.status,
+    )
+  }
+  if (!body?.id || !body?.init_point) {
+    throw new MercadoPagoError('Mercado Pago response missing preference id/init_point', res.status)
+  }
+
+  return { preferenceId: body.id, initPoint: body.init_point }
+}
+
+export interface PaymentStatus {
+  paymentId: string
+  status: string
+  approved: boolean
+  /** The reserva id we set as `external_reference` on the preference —
+   *  null if this payment wasn't created through our Checkout Pro
+   *  flow (defensive; shouldn't happen for our own notifications). */
+  externalReference: string | null
+}
+
+/**
+ * Re-fetches a payment's status directly from Mercado Pago by payment
+ * id — the Checkout Pro counterpart to `getOrder` above. A Checkout
+ * Pro webhook notification's `data.id` is a PAYMENT id (not an order
+ * id), so it must go through `/v1/payments/{id}`, never `/v1/orders/{id}`.
+ * Same "never trust the webhook body, always re-fetch" posture.
+ */
+export async function getPayment(accessToken: string, paymentId: string): Promise<PaymentStatus> {
+  const res = await fetch(`${PAYMENTS_URL}/${encodeURIComponent(paymentId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  const body = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new MercadoPagoError(
+      `Mercado Pago payment fetch failed (${res.status}): ${body?.message ?? 'unknown error'}`,
+      res.status,
+    )
+  }
+  const status: string = body?.status ?? 'unknown'
+  return {
+    paymentId,
+    status,
+    approved: status === 'approved',
+    externalReference: typeof body?.external_reference === 'string' ? body.external_reference : null,
+  }
+}
+
 export class MercadoPagoError extends Error {
   constructor(
     message: string,

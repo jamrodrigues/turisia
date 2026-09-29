@@ -6,6 +6,9 @@ export interface PaymentConfig {
   accessToken: string
   webhookSecret: string | null
   isActive: boolean
+  /** Opt-in: create_payment sends a Checkout Pro link (Pix + card +
+   *  installments) instead of a Pix-only charge. See 072. */
+  acceptCardInstallments: boolean
 }
 
 interface PaymentConfigRow {
@@ -13,6 +16,7 @@ interface PaymentConfigRow {
   access_token_encrypted: string | null
   webhook_secret_encrypted: string | null
   is_active: boolean
+  accept_card_installments: boolean
 }
 
 /**
@@ -33,7 +37,7 @@ export async function loadPaymentConfig(
 ): Promise<PaymentConfig | null> {
   const { data, error } = await db
     .from('payment_config')
-    .select('provider, access_token_encrypted, webhook_secret_encrypted, is_active')
+    .select('provider, access_token_encrypted, webhook_secret_encrypted, is_active, accept_card_installments')
     .eq('account_id', accountId)
     .maybeSingle()
   if (error) throw error
@@ -66,5 +70,11 @@ export async function loadPaymentConfig(
     }
   }
 
-  return { provider: row.provider, accessToken, webhookSecret, isActive: row.is_active }
+  return {
+    provider: row.provider,
+    accessToken,
+    webhookSecret,
+    isActive: row.is_active,
+    acceptCardInstallments: row.accept_card_installments,
+  }
 }

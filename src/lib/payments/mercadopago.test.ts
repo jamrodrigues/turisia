@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import crypto from 'crypto'
-import { createPixOrder, getOrder, verifyWebhookSignature, MercadoPagoError } from './mercadopago'
+import {
+  createPixOrder,
+  getOrder,
+  createCheckoutPreference,
+  getPayment,
+  verifyWebhookSignature,
+  MercadoPagoError,
+} from './mercadopago'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -106,6 +113,102 @@ describe('getOrder', () => {
     )
     const result = await getOrder('token', 'ORD1')
     expect(result.approved).toBe(false)
+  })
+})
+
+describe('createCheckoutPreference', () => {
+  it('posts to /checkout/preferences with items/external_reference/notification_url and returns init_point', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({ id: 'PREF123', init_point: 'https://mp.example/checkout/PREF123' }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await createCheckoutPreference({
+      accessToken: 'APP_USR-token',
+      amount: 180,
+      description: 'Passeio de Buggy',
+      payerEmail: 'cliente@example.com',
+      externalReference: 'reserva-1',
+      notificationUrl: 'https://turisia.example/api/payments/webhook/acc-1',
+    })
+
+    expect(result).toEqual({ preferenceId: 'PREF123', initPoint: 'https://mp.example/checkout/PREF123' })
+
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://api.mercadopago.com/checkout/preferences')
+    expect(opts.headers.Authorization).toBe('Bearer APP_USR-token')
+    expect(opts.headers['X-Idempotency-Key']).toBe('reserva-checkout-reserva-1')
+    const body = JSON.parse(opts.body)
+    expect(body.external_reference).toBe('reserva-1')
+    expect(body.notification_url).toBe('https://turisia.example/api/payments/webhook/acc-1')
+    expect(body.items[0]).toMatchObject({ title: 'Passeio de Buggy', quantity: 1, unit_price: 180, currency_id: 'BRL' })
+    expect(body.payment_methods.installments).toBe(12)
+  })
+
+  it('respects a custom maxInstallments', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({ id: 'PREF1', init_point: 'https://x' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await createCheckoutPreference({
+      accessToken: 't',
+      amount: 100,
+      description: 'x',
+      payerEmail: 'a@b.com',
+      externalReference: 'r1',
+      notificationUrl: 'https://x/webhook',
+      maxInstallments: 3,
+    })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.payment_methods.installments).toBe(3)
+  })
+
+  it('throws MercadoPagoError on a non-2xx response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse({ message: 'invalid token' }, 401)))
+    await expect(
+      createCheckoutPreference({
+        accessToken: 'bad',
+        amount: 100,
+        description: 'x',
+        payerEmail: 'a@b.com',
+        externalReference: 'r1',
+        notificationUrl: 'https://x/webhook',
+      }),
+    ).rejects.toThrow(MercadoPagoError)
+  })
+
+  it('throws when the response is missing id/init_point', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse({})))
+    await expect(
+      createCheckoutPreference({
+        accessToken: 'ok',
+        amount: 100,
+        description: 'x',
+        payerEmail: 'a@b.com',
+        externalReference: 'r1',
+        notificationUrl: 'https://x/webhook',
+      }),
+    ).rejects.toThrow(/missing preference id/)
+  })
+})
+
+describe('getPayment', () => {
+  it('reports approved:true and the external_reference for an approved payment', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(okResponse({ status: 'approved', external_reference: 'reserva-1' })),
+    )
+    const result = await getPayment('token', 'PAY1')
+    expect(result).toEqual({ paymentId: 'PAY1', status: 'approved', approved: true, externalReference: 'reserva-1' })
+  })
+
+  it('reports approved:false for a pending payment', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse({ status: 'pending', external_reference: 'r1' })))
+    const result = await getPayment('token', 'PAY1')
+    expect(result.approved).toBe(false)
+  })
+
+  it('throws MercadoPagoError on a non-2xx response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse({ message: 'not found' }, 404)))
+    await expect(getPayment('token', 'missing')).rejects.toThrow(MercadoPagoError)
   })
 })
 

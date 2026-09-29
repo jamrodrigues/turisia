@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { loadPaymentConfig } from '@/lib/payments/config'
-import { verifyWebhookSignature, getOrder } from '@/lib/payments/mercadopago'
+import { verifyWebhookSignature, getOrder, getPayment } from '@/lib/payments/mercadopago'
 import { resumeFlowRunAfterPayment } from '@/lib/flows/engine'
 
 // ============================================================
@@ -63,53 +63,89 @@ export async function POST(request: Request, { params }: { params: Promise<{ acc
     return NextResponse.json({ ok: true, skipped: 'no_data_id' })
   }
 
-  // data.id may be the order id or the payment id depending on
-  // notification topic — match on either, then always re-fetch by our
-  // own stored order id (see column comments, 062).
-  const { data: reserva, error } = await db
-    .from('reservas')
-    .select('id, mp_order_id, pagamento_status')
-    .or(`mp_order_id.eq.${dataId},mp_payment_id.eq.${dataId}`)
-    .maybeSingle()
-  if (error || !reserva?.mp_order_id) {
-    return NextResponse.json({ ok: true, skipped: 'no_matching_reserva' })
-  }
-  if (reserva.pagamento_status === 'pago') {
-    // Already processed by an earlier delivery of this same event —
-    // idempotent no-op, not an error.
-    return NextResponse.json({ ok: true, skipped: 'already_paid' })
-  }
-
-  try {
-    const order = await getOrder(paymentConfig.accessToken, reserva.mp_order_id)
-    if (!order.approved) {
-      return NextResponse.json({ ok: true, status: order.status })
-    }
-
-    // Idempotent guard in the WHERE clause: a second concurrent
-    // delivery of the same "approved" event updates 0 rows here
-    // instead of double-processing (and only the one that actually
-    // flips the row goes on to resume the flow).
+  // Mark a reserva paid + resume its flow, idempotently. Shared by both
+  // reconciliation paths below (Pix/Orders-API and Checkout Pro) so
+  // "already paid" / concurrent-webhook handling lives in one place.
+  async function markPaidAndResume(reservaId: string): Promise<boolean> {
     const { data: updated, error: updErr } = await db
       .from('reservas')
       .update({ pagamento_status: 'pago', paid_at: new Date().toISOString() })
-      .eq('id', reserva.id)
+      .eq('id', reservaId)
       .neq('pagamento_status', 'pago')
       .select('id')
       .maybeSingle()
     if (updErr) {
       console.error('[payments webhook] failed to mark reserva paid:', updErr.message)
-      return NextResponse.json({ ok: true, error: 'update_failed' })
+      return false
     }
-    if (updated) {
-      await resumeFlowRunAfterPayment(reserva.id)
+    if (updated) await resumeFlowRunAfterPayment(reservaId)
+    return true
+  }
+
+  // data.id may be the order id or the payment id depending on
+  // notification topic — match on either, then always re-fetch by our
+  // own stored order id (see column comments, 062). This is the
+  // Pix/Orders-API v2 path (createPixOrder) — the id was already known
+  // and stored on the reserva at charge-creation time.
+  const { data: reserva, error } = await db
+    .from('reservas')
+    .select('id, mp_order_id, pagamento_status')
+    .or(`mp_order_id.eq.${dataId},mp_payment_id.eq.${dataId}`)
+    .maybeSingle()
+
+  if (reserva?.mp_order_id) {
+    if (reserva.pagamento_status === 'pago') {
+      return NextResponse.json({ ok: true, skipped: 'already_paid' })
     }
+    try {
+      const order = await getOrder(paymentConfig.accessToken, reserva.mp_order_id)
+      if (!order.approved) {
+        return NextResponse.json({ ok: true, status: order.status })
+      }
+      await markPaidAndResume(reserva.id)
+      return NextResponse.json({ ok: true, status: 'approved' })
+    } catch (err) {
+      console.error('[payments webhook] getOrder failed:', err instanceof Error ? err.message : err)
+      // Non-2xx would make Mercado Pago retry — appropriate here since
+      // this is our own transient failure (network, MP API hiccup), not
+      // "this notification is invalid".
+      return NextResponse.json({ error: 'internal error' }, { status: 500 })
+    }
+  }
+  if (error) {
+    console.error('[payments webhook] reserva lookup failed:', error.message)
+  }
+
+  // No pre-stored id matched — this notification's `data.id` is a
+  // Checkout Pro PAYMENT id (createCheckoutPreference/072), which
+  // doesn't exist until the customer actually pays, so it was never
+  // stored on the reserva. Re-fetch the payment itself and match by
+  // `external_reference` (the reserva id we set when creating the
+  // preference) instead.
+  try {
+    const payment = await getPayment(paymentConfig.accessToken, dataId)
+    if (!payment.externalReference) {
+      return NextResponse.json({ ok: true, skipped: 'no_matching_reserva' })
+    }
+    const { data: checkoutReserva } = await db
+      .from('reservas')
+      .select('id, pagamento_status')
+      .eq('id', payment.externalReference)
+      .eq('account_id', accountId)
+      .maybeSingle()
+    if (!checkoutReserva) {
+      return NextResponse.json({ ok: true, skipped: 'no_matching_reserva' })
+    }
+    if (checkoutReserva.pagamento_status === 'pago') {
+      return NextResponse.json({ ok: true, skipped: 'already_paid' })
+    }
+    if (!payment.approved) {
+      return NextResponse.json({ ok: true, status: payment.status })
+    }
+    await markPaidAndResume(checkoutReserva.id)
     return NextResponse.json({ ok: true, status: 'approved' })
   } catch (err) {
-    console.error('[payments webhook] getOrder failed:', err instanceof Error ? err.message : err)
-    // Non-2xx would make Mercado Pago retry — appropriate here since
-    // this is our own transient failure (network, MP API hiccup), not
-    // "this notification is invalid".
+    console.error('[payments webhook] getPayment failed:', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: 'internal error' }, { status: 500 })
   }
 }

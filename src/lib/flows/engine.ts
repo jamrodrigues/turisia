@@ -44,7 +44,7 @@ import { renderVoucherPdf, voucherFilename } from "./voucher";
 import { signMediaUrl } from "@/lib/storage/media-url.server";
 import { MEDIA_URL_TTL } from "@/lib/storage/media-url";
 import { loadPaymentConfig } from "@/lib/payments/config";
-import { createPixOrder } from "@/lib/payments/mercadopago";
+import { createPixOrder, createCheckoutPreference } from "@/lib/payments/mercadopago";
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
@@ -671,6 +671,50 @@ async function executeCreatePayment(
   }
 
   const payerEmail = reserva.contacts?.email?.trim() || `reserva-${reservaId}@pix.invalid`;
+
+  // Opt-in per account (072) — Pix-only accounts take the exact same
+  // path as before this feature; nothing changes for them.
+  if (paymentConfig.acceptCardInstallments) {
+    try {
+      const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "").replace(/\/$/, "");
+      const preference = await createCheckoutPreference({
+        accessToken: paymentConfig.accessToken,
+        amount,
+        description: reserva.pacotes?.name ?? "Reserva",
+        payerEmail,
+        externalReference: reservaId,
+        notificationUrl: `${siteUrl}/api/payments/webhook/${run.account_id}`,
+      });
+
+      await db
+        .from("reservas")
+        .update({
+          pagamento_status: "pendente",
+          mp_preference_id: preference.preferenceId,
+          pagamento_valor: amount,
+        })
+        .eq("id", reservaId);
+
+      await engineSendText({
+        accountId: run.account_id,
+        userId: run.user_id,
+        conversationId: run.conversation_id!,
+        contactId: run.contact_id!,
+        text:
+          "Pra confirmar sua reserva, é só pagar por aqui (Pix ou cartão parcelado) — assim que cair, eu confirmo automaticamente! 💳\n\n" +
+          preference.initPoint,
+      });
+
+      return { suspend: true, nextKey: node.node_key };
+    } catch (err) {
+      console.error("[flows] createCheckoutPreference failed:", err instanceof Error ? err.message : err);
+      await logEvent(db, run.id, "error", node.node_key, {
+        reason: "mercadopago_create_failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      return { suspend: false, nextKey: cfg.failure_next };
+    }
+  }
 
   try {
     const order = await createPixOrder({

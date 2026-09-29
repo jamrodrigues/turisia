@@ -20,7 +20,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('payment_config')
-      .select('provider, access_token_encrypted, webhook_secret_encrypted, is_active')
+      .select('provider, access_token_encrypted, webhook_secret_encrypted, is_active, accept_card_installments')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -36,6 +36,7 @@ export async function GET() {
       is_active: data.is_active,
       has_access_token: !!data.access_token_encrypted,
       has_webhook_secret: !!data.webhook_secret_encrypted,
+      accept_card_installments: data.accept_card_installments,
     })
   } catch (err) {
     return toErrorResponse(err)
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
     if (!body || typeof body !== 'object') return bad('Invalid request body')
 
     const isActive = body.is_active === true
+    const acceptCardInstallments = body.accept_card_installments === true
 
     const rawToken = typeof body.access_token === 'string' ? body.access_token.trim() : ''
     const clearToken = body.access_token === null
@@ -77,7 +79,11 @@ export async function POST(request: Request) {
       return bad('access_token is required to activate payments')
     }
 
-    const shared: Record<string, unknown> = { provider: 'mercadopago', is_active: isActive }
+    const shared: Record<string, unknown> = {
+      provider: 'mercadopago',
+      is_active: isActive,
+      accept_card_installments: acceptCardInstallments,
+    }
     if (rawToken) shared.access_token_encrypted = encrypt(rawToken)
     else if (clearToken) shared.access_token_encrypted = null
     if (rawWebhookSecret) shared.webhook_secret_encrypted = encrypt(rawWebhookSecret)

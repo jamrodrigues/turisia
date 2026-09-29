@@ -37,6 +37,7 @@ export function PaymentSettings() {
 
   const [configured, setConfigured] = useState(false);
   const [isActive, setIsActive] = useState(false);
+  const [acceptCardInstallments, setAcceptCardInstallments] = useState(false);
 
   const [accessToken, setAccessToken] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
@@ -60,6 +61,7 @@ export function PaymentSettings() {
       }
       setConfigured(Boolean(data.configured));
       setIsActive(Boolean(data.is_active));
+      setAcceptCardInstallments(Boolean(data.accept_card_installments));
       setHasStoredToken(Boolean(data.has_access_token));
       setHasStoredSecret(Boolean(data.has_webhook_secret));
       setAccessToken('');
@@ -92,6 +94,7 @@ export function PaymentSettings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           is_active: isActive,
+          accept_card_installments: acceptCardInstallments,
           ...(tokenEdited ? { access_token: accessToken.trim() } : {}),
           ...(secretEdited ? { webhook_secret: webhookSecret.trim() } : {}),
         }),
@@ -157,6 +160,21 @@ export function PaymentSettings() {
               </p>
             </div>
             <Switch checked={isActive} onCheckedChange={setIsActive} disabled={disabled} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">Aceitar cartão parcelado</p>
+              <p className="text-xs text-muted-foreground">
+                Com isso ligado, o cliente recebe um link de checkout (Pix, cartão ou parcelado)
+                em vez do Pix copia-e-cola. Desligado por padrão — mantém o comportamento atual.
+              </p>
+            </div>
+            <Switch
+              checked={acceptCardInstallments}
+              onCheckedChange={setAcceptCardInstallments}
+              disabled={disabled}
+            />
           </div>
 
           <div className="grid gap-2">
