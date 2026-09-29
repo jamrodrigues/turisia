@@ -26,6 +26,7 @@ import { dispatchInboundToBrain } from '@/lib/ai/dispatch'
 import { findOrCreateConversationRow } from '@/lib/whatsapp/find-or-create-conversation'
 import type { Conversation } from '@/types'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { engineSendText } from '@/lib/flows/meta-send'
 
 function supabaseAdmin() {
   return createClient(
@@ -248,6 +249,22 @@ export async function processNormalizedInbound(
   // Broadcast reply tracking (replied_count via the migration-003 trigger).
   await flagBroadcastReplyIfAny(input.accountId, contactRecord.id)
 
+  // Satisfaction-survey answer (074) — checked BEFORE flows/automations/
+  // AI, same "consumed" precedence a flow gets, so a customer replying
+  // "5" or "5, adorei!" to /api/surveys/cron's message never gets
+  // reinterpreted as a keyword trigger or handed to the bot. A message
+  // that doesn't parse as a 1-5 rating falls through untouched — the
+  // customer might be saying something else entirely.
+  const surveyConsumed =
+    !input.interactiveReplyId &&
+    (await tryConsumeSurveyResponse(
+      input.accountId,
+      input.configOwnerUserId,
+      contactRecord.id,
+      conversation.id,
+      input.contentText ?? '',
+    ))
+
   // ============================================================
   // Dispatch order — flows win over automations' content triggers,
   // and both win over the LLM. See the Meta route's original comment
@@ -259,8 +276,11 @@ export async function processNormalizedInbound(
   // reabrir. O brain já é barrado por isBotEligible; aqui pulamos o flow para
   // que ele não responda a keyword ("menu"/"voltar"/"início") durante a espera.
   // Quando false/null, o comportamento é inalterado — o flow roda normalmente.
-  let flowConsumed = false
-  if (conversation.ai_autoreply_disabled !== true) {
+  // Seeded with surveyConsumed so the existing `!flowConsumed` guards
+  // below (automations, AI) automatically also skip for a message the
+  // survey handler already answered — one flag, same precedence chain.
+  let flowConsumed = surveyConsumed
+  if (!surveyConsumed && conversation.ai_autoreply_disabled !== true) {
     const flowResult = await dispatchInboundToFlows({
       accountId: input.accountId,
       userId: input.configOwnerUserId,
@@ -439,6 +459,87 @@ export async function lookupInternalIdByProviderId(
     return null
   }
   return data?.id ?? null
+}
+
+/** `5`, `nota 5`, `5 - adorei!`, `Nota: 5, foi ótimo` — a leading 1-5
+ *  digit (optionally preceded by "nota"), rest of the line kept as an
+ *  optional comment. Exported for unit testing. */
+export function parseSurveyReply(text: string): { nota: number; comentario: string | null } | null {
+  const match = text.trim().match(/^(?:nota\s*[:]?\s*)?([1-5])\b\s*[-:.,]?\s*(.*)$/i)
+  if (!match) return null
+  const comentario = match[2]?.trim() || null
+  return { nota: Number(match[1]), comentario }
+}
+
+/**
+ * Checks for a pending ('enviado') satisfaction survey (074) for this
+ * contact and, if the inbound text parses as a 1-5 rating, records the
+ * answer and thanks the customer. Returns true when it consumed the
+ * message (caller must not also hand it to flows/automations/AI).
+ *
+ * Only ever looks at the single most-recently-sent pending survey —
+ * a customer with two trips in flight answering "5" answers whichever
+ * survey went out last, which matches what they're most likely
+ * replying to.
+ */
+async function tryConsumeSurveyResponse(
+  accountId: string,
+  configOwnerUserId: string,
+  contactId: string,
+  conversationId: string,
+  text: string,
+): Promise<boolean> {
+  if (!text.trim()) return false
+
+  const db = supabaseAdmin()
+  const { data: pending } = await db
+    .from('avaliacoes')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('contact_id', contactId)
+    .eq('status', 'enviado')
+    .order('enviado_em', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!pending) return false
+
+  const parsed = parseSurveyReply(text)
+  if (!parsed) return false
+
+  // Idempotent guard in the WHERE clause — a redelivered/duplicate
+  // inbound (uazapi) can't double-process the same survey.
+  const { data: updated, error: updErr } = await db
+    .from('avaliacoes')
+    .update({
+      status: 'respondido',
+      nota: parsed.nota,
+      comentario: parsed.comentario,
+      respondido_em: new Date().toISOString(),
+    })
+    .eq('id', pending.id)
+    .eq('status', 'enviado')
+    .select('id')
+    .maybeSingle()
+  if (updErr || !updated) return false
+
+  const thankYou =
+    parsed.nota >= 4
+      ? 'Que ótimo! 🙌 Muito obrigado pela nota, é isso que a gente busca todo dia!'
+      : 'Valeu por avaliar! 🙏 Vamos usar esse feedback pra melhorar — se quiser contar mais algum detalhe, é só responder aqui.'
+
+  try {
+    await engineSendText({
+      accountId,
+      userId: configOwnerUserId,
+      conversationId,
+      contactId,
+      text: thankYou,
+    })
+  } catch (err) {
+    console.error('[inbound] survey thank-you send failed:', err instanceof Error ? err.message : err)
+  }
+
+  return true
 }
 
 async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildDispatchMessage, type NormalizedInbound } from './process-inbound'
+import { buildDispatchMessage, parseSurveyReply, type NormalizedInbound } from './process-inbound'
 
 /**
  * The flow engine only understands `text` and `interactive_reply` — no
@@ -61,5 +61,39 @@ describe('buildDispatchMessage', () => {
   it('location (sem mediaUrl) não vira media', () => {
     const msg = buildDispatchMessage(base({ contentType: 'location', contentText: '[localização]' }))
     expect(msg.kind).toBe('text')
+  })
+})
+
+describe('parseSurveyReply', () => {
+  it('parses a bare digit with no comment', () => {
+    expect(parseSurveyReply('5')).toEqual({ nota: 5, comentario: null })
+  })
+
+  it('parses "nota 5" prefix', () => {
+    expect(parseSurveyReply('nota 5')).toEqual({ nota: 5, comentario: null })
+    expect(parseSurveyReply('Nota: 5')).toEqual({ nota: 5, comentario: null })
+  })
+
+  it('keeps the rest of the message as a comment', () => {
+    expect(parseSurveyReply('5 - adorei o passeio!')).toEqual({ nota: 5, comentario: 'adorei o passeio!' })
+    expect(parseSurveyReply('5, foi ótimo')).toEqual({ nota: 5, comentario: 'foi ótimo' })
+  })
+
+  it('accepts any digit 1-5', () => {
+    for (const n of [1, 2, 3, 4, 5]) {
+      expect(parseSurveyReply(String(n))).toEqual({ nota: n, comentario: null })
+    }
+  })
+
+  it('rejects a rating outside 1-5', () => {
+    expect(parseSurveyReply('6')).toBeNull()
+    expect(parseSurveyReply('0')).toBeNull()
+    expect(parseSurveyReply('10')).toBeNull()
+  })
+
+  it('rejects free text with no leading rating', () => {
+    expect(parseSurveyReply('foi muito bom')).toBeNull()
+    expect(parseSurveyReply('')).toBeNull()
+    expect(parseSurveyReply('oi')).toBeNull()
   })
 })
