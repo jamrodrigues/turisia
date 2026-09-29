@@ -1,59 +1,54 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
 import { Loader2, Sparkles } from "lucide-react"
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/hooks/use-auth"
-import { generateClosingFlowForPacote } from "@/lib/flows/generate-closing-flow"
-import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 
 /**
- * One-click generator for the package's automated-closing Flow
- * (turia_agenda_reservas_schema / turia — Fase A of the roadmap:
- * scale the Buggy flow's pattern to the rest of the catalog instead
- * of hand-authoring each one via SQL). Safe to click again after
- * changing horários — regenerates the same flow in place.
+ * Read-only status for the package's automated-closing Flow — no
+ * manual trigger here. Generation is tied to the pacote form's own
+ * "Salvar" (and to PacoteHorariosEditor's per-slot save), so this
+ * only ever *reports* the outcome, it never causes it. Having a
+ * separate "Gerar" button here used to leave it ambiguous whether
+ * saving the form already generated the flow or not — it always did.
+ *
+ * `refreshSignal` — bump it (any changing value) after a save that may
+ * have changed the flow, to force a refetch.
  */
-export function PacoteClosingFlowButton({ pacoteId, canManage }: { pacoteId: string; canManage: boolean }) {
-  const { accountId, user, accountRole } = useAuth()
+export function PacoteClosingFlowButton({
+  pacoteId,
+  category,
+  refreshSignal,
+}: {
+  pacoteId: string
+  category: string | null | undefined
+  refreshSignal?: number
+}) {
+  const { accountId, accountRole } = useAuth()
   const canSeeFlows = accountRole === "owner" || accountRole === "admin"
-  const [generating, setGenerating] = useState(false)
   const [flowName, setFlowName] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Reload (not just reset) on every pacote switch — otherwise the
-  // "already generated" state from whichever package was open last
-  // leaks onto the next one (found live: editing Mergulho then
-  // City Tour showed Mergulho's "Gerar novamente" label).
   useEffect(() => {
     let cancelled = false
+    const trimmedCategory = category?.trim().toLowerCase()
     setLoading(true)
-    setFlowName(null)
-    if (!accountId) {
+    if (!accountId || !trimmedCategory) {
+      setFlowName(null)
       setLoading(false)
       return
     }
     ;(async () => {
       const supabase = createClient()
-      const { data: pacote } = await supabase
-        .from("pacotes")
-        .select("category")
-        .eq("id", pacoteId)
-        .maybeSingle()
-      const category = (pacote?.category as string | null)?.trim().toLowerCase()
-      if (!category) {
-        if (!cancelled) setLoading(false)
-        return
-      }
       const { data: flow } = await supabase
         .from("flows")
         .select("name")
         .eq("account_id", accountId)
-        .eq("ai_topic", category)
+        .eq("ai_topic", trimmedCategory)
         .eq("status", "active")
         .maybeSingle()
       if (cancelled) return
@@ -63,29 +58,7 @@ export function PacoteClosingFlowButton({ pacoteId, canManage }: { pacoteId: str
     return () => {
       cancelled = true
     }
-  }, [pacoteId, accountId])
-
-  async function handleGenerate() {
-    if (!accountId || !user) {
-      toast.error("Sessão inválida — recarregue a página")
-      return
-    }
-    setGenerating(true)
-    try {
-      const supabase = createClient()
-      const { flowName: name } = await generateClosingFlowForPacote(supabase, {
-        pacoteId,
-        accountId,
-        userId: user.id,
-      })
-      setFlowName(name)
-      toast.success(`Fechamento automático pronto: "${name}"`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Falha ao gerar o fechamento automático")
-    } finally {
-      setGenerating(false)
-    }
-  }
+  }, [pacoteId, accountId, category, refreshSignal])
 
   return (
     <div className="flex flex-col gap-2">
@@ -94,22 +67,19 @@ export function PacoteClosingFlowButton({ pacoteId, canManage }: { pacoteId: str
         Fechamento automático
       </Label>
       <p className="text-xs text-muted-foreground">
-        Gera (ou atualiza) o fluxo que fecha esse pacote sozinho no WhatsApp — a partir dos horários
-        acima. Categoria do pacote vira a palavra-chave/tópico do fechamento.
+        Gerado (ou atualizado) automaticamente sempre que você salva o pacote ou muda os
+        horários acima — a partir da categoria. Nenhuma ação manual necessária.
       </p>
-      {canManage && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleGenerate}
-          disabled={generating || loading}
-          className="w-fit"
-        >
-          {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          {flowName ? "Gerar novamente" : "Gerar fechamento automático"}
-        </Button>
-      )}
-      {!loading && flowName && (
+      {loading ? (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Verificando…
+        </p>
+      ) : !category?.trim() ? (
+        <p className="text-xs text-muted-foreground">
+          Defina uma categoria e salve pra gerar o fechamento automático.
+        </p>
+      ) : flowName ? (
         <p className="text-xs text-muted-foreground">
           {canSeeFlows ? (
             <>
@@ -122,6 +92,10 @@ export function PacoteClosingFlowButton({ pacoteId, canManage }: { pacoteId: str
           ) : (
             <>Fluxo &quot;{flowName}&quot; ativo.</>
           )}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Ainda não gerado — salve o pacote de novo pra gerar.
         </p>
       )}
     </div>

@@ -57,7 +57,16 @@ export default function PacotesPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Pacote | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  // Last-persisted snapshot of `form` — Salvar is disabled whenever
+  // `form` matches this (nothing to save). Reset on open, updated
+  // after every successful save.
+  const [savedSnapshot, setSavedSnapshot] = useState<FormState>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  // Bumped after a save that may have changed the closing flow, so
+  // PacoteClosingFlowButton refetches instead of showing stale status.
+  const [flowRefreshKey, setFlowRefreshKey] = useState(0)
+
+  const isDirty = JSON.stringify(form) !== JSON.stringify(savedSnapshot)
 
   const [pendingDelete, setPendingDelete] = useState<Pacote | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -94,19 +103,22 @@ export default function PacotesPage() {
   function openCreate() {
     setEditing(null)
     setForm(EMPTY_FORM)
+    setSavedSnapshot(EMPTY_FORM)
     setFormOpen(true)
   }
 
   function openEdit(p: Pacote) {
     setEditing(p)
-    setForm({
+    const loaded: FormState = {
       name: p.name,
       category: p.category ?? "",
       price: String(p.price),
       duration_minutes: p.duration_minutes != null ? String(p.duration_minutes) : "",
       description: p.description ?? "",
       is_active: p.is_active,
-    })
+    }
+    setForm(loaded)
+    setSavedSnapshot(loaded)
     setFormOpen(true)
   }
 
@@ -153,28 +165,37 @@ export default function PacotesPage() {
         const { data: inserted, error: insertErr } = await supabase
           .from("pacotes")
           .insert({ ...payload, account_id: accountId })
-          .select("id")
+          .select("*")
           .single()
         if (insertErr || !inserted) throw insertErr ?? new Error("Falha ao criar pacote")
         pacoteId = inserted.id as string
         toast.success("Pacote criado")
+        // Promote create → edit in place — media/horários/fechamento
+        // automático need a saved pacoteId, so show them immediately
+        // instead of making the agent close and reopen the dialog.
+        setEditing(inserted as Pacote)
       }
+      setSavedSnapshot(form)
 
-      // Best-effort — a pacote with a category should always have a
-      // closing flow, without the agent having to remember to click
-      // "Gerar" separately. Only a real ownership conflict (another
-      // pacote already claims this category) is worth interrupting the
-      // save for; anything else (e.g. no horários yet) just means the
-      // flow comes out with the 0-horário shape, generated next save.
+      // A pacote with a category should always have a closing flow,
+      // without the agent having to remember a separate "Gerar" step —
+      // awaited (not fire-and-forget) so the toast reflects what
+      // actually happened, including the one real failure mode (another
+      // pacote already claims this category).
       if (payload.category && accountId && user) {
-        generateClosingFlowForPacote(supabase, { pacoteId, accountId, userId: user.id }).catch((err) => {
-          if (err instanceof Error && err.message.includes("já está em uso")) {
-            toast.error(err.message)
-          }
-        })
+        try {
+          const { flowName } = await generateClosingFlowForPacote(supabase, {
+            pacoteId,
+            accountId,
+            userId: user.id,
+          })
+          toast.success(`Fechamento automático "${flowName}" pronto`)
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Falha ao gerar o fechamento automático")
+        }
+        setFlowRefreshKey((k) => k + 1)
       }
 
-      setFormOpen(false)
       await load()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Falha ao salvar pacote")
@@ -325,20 +346,30 @@ export default function PacotesPage() {
             {editing ? (
               <>
                 <PacoteMediaGallery pacoteId={editing.id} canManage={canManage} />
-                <PacoteHorariosEditor pacoteId={editing.id} category={editing.category} canManage={canManage} />
-                <PacoteClosingFlowButton pacoteId={editing.id} canManage={canManage} />
+                <PacoteHorariosEditor
+                  pacoteId={editing.id}
+                  category={form.category}
+                  canManage={canManage}
+                  onFlowChanged={() => setFlowRefreshKey((k) => k + 1)}
+                />
+                <PacoteClosingFlowButton
+                  pacoteId={editing.id}
+                  category={form.category}
+                  refreshSignal={flowRefreshKey}
+                />
               </>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Salve o pacote primeiro — depois volte para adicionar fotos, vídeos e horários.
+                Salve o pacote primeiro — depois aparecem fotos, vídeos, horários e o fechamento
+                automático, sem precisar reabrir o formulário.
               </p>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFormOpen(false)} disabled={saving}>
-              Cancelar
+              {isDirty ? "Cancelar" : "Fechar"}
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
+            <Button onClick={handleSave} disabled={saving || !isDirty}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Salvar
             </Button>

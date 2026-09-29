@@ -38,10 +38,15 @@ export function PacoteHorariosEditor({
   pacoteId,
   category,
   canManage,
+  onFlowChanged,
 }: {
   pacoteId: string
   category?: string | null
   canManage: boolean
+  /** Called after a (successful) regeneration triggered by a slot
+   *  change, so the parent can refresh whatever shows the flow's
+   *  status (PacoteClosingFlowButton's `refreshSignal`). */
+  onFlowChanged?: () => void
 }) {
   const { accountId, user } = useAuth()
   const [slots, setSlots] = useState<PacoteHorario[] | null>(null)
@@ -58,7 +63,9 @@ export function PacoteHorariosEditor({
   function regenerateFlow() {
     if (!category?.trim() || !accountId || !user) return
     const supabase = createClient()
-    void generateClosingFlowForPacote(supabase, { pacoteId, accountId, userId: user.id }).catch(() => {})
+    void generateClosingFlowForPacote(supabase, { pacoteId, accountId, userId: user.id })
+      .then(() => onFlowChanged?.())
+      .catch(() => {})
   }
 
   async function load() {
