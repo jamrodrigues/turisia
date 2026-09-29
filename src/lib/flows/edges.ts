@@ -50,7 +50,8 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
       case "collect_input":
       case "set_tag":
       case "set_var":
-      case "send_voucher": {
+      case "send_voucher":
+      case "join_waitlist": {
         const next = (cfg as { next_node_key?: string }).next_node_key;
         if (next && knownKeys.has(next)) {
           edges.push({
@@ -207,6 +208,7 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     case "set_tag":
     case "set_var":
     case "send_voucher":
+    case "join_waitlist":
       return [{ id: "next", label: "Next" }];
 
     case "condition":
@@ -290,6 +292,7 @@ export function applyEdgeConnection(
     case "set_tag":
     case "set_var":
     case "send_voucher":
+    case "join_waitlist":
       if (sourceHandle === "next") return { next_node_key: targetKey };
       return null;
 
@@ -391,7 +394,8 @@ function patchedConfigWithoutKey(
     case "collect_input":
     case "set_tag":
     case "set_var":
-    case "send_voucher": {
+    case "send_voucher":
+    case "join_waitlist": {
       const next = (cfg as { next_node_key?: string }).next_node_key;
       if (next !== deletedKey) return null;
       return { ...cfg, next_node_key: "" };

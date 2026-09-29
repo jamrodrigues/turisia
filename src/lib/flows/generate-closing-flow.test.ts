@@ -161,4 +161,35 @@ describe('buildClosingFlowNodes', () => {
     const nodes = build([])
     expect(byKey(nodes, 'confirmado').config.text).toContain('pacotes')
   })
+
+  it('offers a waitlist branch on sem_vagas when the package has real horários', () => {
+    const horarios: HorarioForFlow[] = [
+      { id: 'h1', hora_saida: '08:00:00', hora_volta: '12:00:00', capacidade_pessoas: 16 },
+    ]
+    const nodes = build(horarios)
+    expect(byKey(nodes, 'sem_vagas').config).toMatchObject({ next_node_key: 'ask_lista_espera' })
+    const ask = byKey(nodes, 'ask_lista_espera')
+    expect(ask.node_type).toBe('send_buttons')
+    const buttons = ask.config.buttons as { reply_id: string; next_node_key: string }[]
+    expect(buttons).toEqual([
+      { reply_id: 'sim', title: 'Sim, quero', next_node_key: 'entrar_lista_espera' },
+      { reply_id: 'nao', title: 'Não, obrigado', next_node_key: 'transferir' },
+    ])
+    expect(byKey(nodes, 'entrar_lista_espera').config).toEqual({
+      pacote_id: PACOTE_ID,
+      pacote_horario_var_key: 'pacote_horario_id',
+      data_var_key: 'data',
+      quantidade_var_key: 'quantidade',
+      next_node_key: 'confirmado_lista_espera',
+    })
+    expect(byKey(nodes, 'confirmado_lista_espera').config).toMatchObject({ next_node_key: 'fim' })
+    expect(byKey(nodes, 'transferir').node_type).toBe('handoff')
+  })
+
+  it('skips the waitlist offer entirely with 0 horários — sem_vagas goes straight to handoff', () => {
+    const nodes = build([])
+    expect(byKey(nodes, 'sem_vagas').config).toMatchObject({ next_node_key: 'transferir' })
+    expect(nodes.find((n) => n.node_key === 'ask_lista_espera')).toBeUndefined()
+    expect(nodes.find((n) => n.node_type === 'join_waitlist')).toBeUndefined()
+  })
 })

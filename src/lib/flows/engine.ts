@@ -55,6 +55,7 @@ import {
   type FlowNodeRow,
   type FlowRow,
   type FlowRunRow,
+  type JoinWaitlistNodeConfig,
   type ParsedInbound,
   type SendButtonsNodeConfig,
   type SendListNodeConfig,
@@ -128,7 +129,8 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "set_tag" ||
     node_type === "set_var" ||
     node_type === "create_reservation" ||
-    node_type === "send_voucher"
+    node_type === "send_voucher" ||
+    node_type === "join_waitlist"
   );
 }
 
@@ -606,6 +608,47 @@ async function executeCreateReservation(
 
   await mergeRunVar(db, run, "reserva_id", result.reserva_id);
   return { nextKey: cfg.success_next };
+}
+
+/**
+ * Runs `join_waitlist`: records the customer's interest in a sold-out
+ * horario+data. No capacity check here (unlike `criar_reserva`) — a
+ * waitlist entry doesn't reserve anything, it's just a queue position
+ * the sweep in /api/waitlist/cron notifies in order once a cancellation
+ * frees a spot. Always succeeds (barring a DB error) — there's no
+ * "waitlist full" concept in v1.
+ */
+async function executeJoinWaitlist(
+  db: AdminClient,
+  run: FlowRunRow,
+  cfg: JoinWaitlistNodeConfig,
+): Promise<{ nextKey: string }> {
+  const horarioId = run.vars[cfg.pacote_horario_var_key] as string | undefined;
+  const rawData = run.vars[cfg.data_var_key];
+  const rawQtd = run.vars[cfg.quantidade_var_key];
+
+  const dataISO = typeof rawData === "string" ? parseFlexibleDateToISO(rawData) : null;
+  const quantidade = typeof rawQtd === "string" ? Number(rawQtd.trim()) : NaN;
+
+  if (!horarioId || !dataISO || !Number.isFinite(quantidade) || quantidade <= 0) {
+    await logEvent(db, run.id, "error", cfg.next_node_key, { reason: "join_waitlist_missing_vars" });
+    return { nextKey: cfg.next_node_key };
+  }
+
+  const { error } = await db.from("lista_espera").insert({
+    account_id: run.account_id,
+    pacote_id: cfg.pacote_id,
+    pacote_horario_id: horarioId,
+    data: dataISO,
+    quantidade_pessoas: quantidade,
+    contact_id: run.contact_id,
+    conversation_id: run.conversation_id,
+  });
+  if (error) {
+    console.error("[flows] lista_espera insert failed:", error.message);
+  }
+
+  return { nextKey: cfg.next_node_key };
 }
 
 interface ReservaForPayment {
@@ -1201,6 +1244,12 @@ async function advanceFromNodeKey(
         });
       }
       currentKey = cfg.next_node_key;
+      continue;
+    }
+    if (node.node_type === "join_waitlist") {
+      const cfg = node.config as unknown as JoinWaitlistNodeConfig;
+      const outcome = await executeJoinWaitlist(db, run, cfg);
+      currentKey = outcome.nextKey;
       continue;
     }
     if (node.node_type === "send_buttons") {

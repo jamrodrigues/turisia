@@ -194,20 +194,74 @@ export function buildClosingFlowNodes(
       },
     },
     { node_key: 'fim', node_type: 'end', config: {} },
-    {
-      node_key: 'sem_vagas',
-      node_type: 'send_message',
-      config: {
-        text: 'Poxa, não temos vaga nesse horário pra essa data 😔 Vou te conectar com um atendente pra ver outras opções.',
-        next_node_key: 'transferir',
-      },
-    },
-    {
-      node_key: 'transferir',
-      node_type: 'handoff',
-      config: { note: 'Fechamento automático sem vagas no horário/data pedido.' },
-    },
   )
+
+  // A waitlist entry needs a real pacote_horario_id — skip the offer
+  // entirely for the 0-horário shape (no slot to wait for) and go
+  // straight to the old direct-to-handoff behavior.
+  if (horarios.length > 0) {
+    nodes.push(
+      {
+        node_key: 'sem_vagas',
+        node_type: 'send_message',
+        config: {
+          text: 'Poxa, não temos vaga nesse horário pra essa data 😔 Quer entrar na lista de espera? Te aviso na hora se abrir uma vaga.',
+          next_node_key: 'ask_lista_espera',
+        },
+      },
+      {
+        node_key: 'ask_lista_espera',
+        node_type: 'send_buttons',
+        config: {
+          text: 'Quer entrar na lista de espera?',
+          buttons: [
+            { reply_id: 'sim', title: 'Sim, quero', next_node_key: 'entrar_lista_espera' },
+            { reply_id: 'nao', title: 'Não, obrigado', next_node_key: 'transferir' },
+          ],
+        },
+      },
+      {
+        node_key: 'entrar_lista_espera',
+        node_type: 'join_waitlist',
+        config: {
+          pacote_id: pacoteId,
+          pacote_horario_var_key: 'pacote_horario_id',
+          data_var_key: 'data',
+          quantidade_var_key: 'quantidade',
+          next_node_key: 'confirmado_lista_espera',
+        },
+      },
+      {
+        node_key: 'confirmado_lista_espera',
+        node_type: 'send_message',
+        config: {
+          text: 'Prontinho, você tá na lista! ✅ Assim que abrir uma vaga nesse horário eu te chamo por aqui.',
+          next_node_key: 'fim',
+        },
+      },
+      {
+        node_key: 'transferir',
+        node_type: 'handoff',
+        config: { note: 'Fechamento automático sem vagas no horário/data pedido — cliente não quis entrar na lista de espera.' },
+      },
+    )
+  } else {
+    nodes.push(
+      {
+        node_key: 'sem_vagas',
+        node_type: 'send_message',
+        config: {
+          text: 'Poxa, não temos vaga nesse horário pra essa data 😔 Vou te conectar com um atendente pra ver outras opções.',
+          next_node_key: 'transferir',
+        },
+      },
+      {
+        node_key: 'transferir',
+        node_type: 'handoff',
+        config: { note: 'Fechamento automático sem vagas no horário/data pedido.' },
+      },
+    )
+  }
 
   if (requirePayment) {
     nodes.push(

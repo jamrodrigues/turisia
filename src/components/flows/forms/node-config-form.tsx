@@ -290,6 +290,25 @@ export function NodeConfigForm({
           label="Depois de enviar o voucher, avança para"
         />
       );
+
+    case "join_waitlist":
+      return (
+        <>
+          <p className="text-xs text-muted-foreground">
+            Gerado pelo fechamento automático — coloca o cliente na fila do
+            horário/data escolhidos (lidos das mesmas variáveis do passo
+            &quot;Criar reserva&quot; anterior). Sem configuração manual além
+            de pra onde avançar.
+          </p>
+          <NextNodeRow
+            value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onChange={(v) => onUpdateConfig({ next_node_key: v })}
+            label="Depois de entrar na lista, avança para"
+          />
+        </>
+      );
   }
 }
 

@@ -19,6 +19,7 @@
 import {
   Braces,
   CalendarCheck,
+  Clock,
   CreditCard,
   FileText,
   Flag,
@@ -61,6 +62,7 @@ export type NodeType =
   | 'create_reservation'
   | 'create_payment'
   | 'send_voucher'
+  | 'join_waitlist'
   | 'handoff'
   | 'end';
 
@@ -192,6 +194,13 @@ export const NODE_META: Record<
     blurb: 'Gera e envia o PDF do voucher da reserva',
     category: 'flow',
   },
+  join_waitlist: {
+    label: 'Entrar na lista de espera',
+    icon: Clock,
+    color: 'text-orange-400',
+    blurb: 'Coloca o cliente na fila pra ser avisado se abrir vaga',
+    category: 'flow',
+  },
   handoff: {
     label: 'Transferir para agente',
     icon: UserPlus,
@@ -249,6 +258,7 @@ const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
   create_reservation: { l: 0.6, c: 0.14, h: 145 }, // green — booking confirmed
   create_payment: { l: 0.68, c: 0.16, h: 90 }, // gold — money
   send_voucher: { l: 0.62, c: 0.14, h: 320 }, // magenta — the deliverable
+  join_waitlist: { l: 0.68, c: 0.15, h: 55 }, // orange — waiting
   handoff: { l: 0.65, c: 0.17, h: 16 }, // rose — hands off
   end: { l: 0.55, c: 0.01, h: 260 }, // neutral grey — terminal
 };
@@ -476,7 +486,9 @@ export function summarizeNode(node: BuilderNode): string | null {
     case 'create_payment':
       return 'Cobra via Pix (Mercado Pago) e aguarda o pagamento';
     case 'send_voucher':
-      return 'Gera e envia o voucher em PDF';
+      return 'Gera e envia o voucher em PDF'
+    case 'join_waitlist':
+      return 'Entra na fila de espera do horário';
     case 'handoff': {
       const note = typeof cfg.note === 'string' ? cfg.note : '';
       return note.length > 0 ? truncate(note) : null;

@@ -204,6 +204,14 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
       return { success_next: "", failure_next: "" };
     case "send_voucher":
       return { next_node_key: "" };
+    case "join_waitlist":
+      return {
+        pacote_id: "",
+        pacote_horario_var_key: "",
+        data_var_key: "data",
+        quantidade_var_key: "quantidade",
+        next_node_key: "",
+      };
     case "handoff":
       return { note: "" };
     case "end":

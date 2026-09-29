@@ -251,6 +251,28 @@ export interface SendVoucherNodeConfig {
   next_node_key: string;
 }
 
+/**
+ * Puts the customer on the waitlist for a sold-out horario+data —
+ * reached from `create_reservation`'s `failure_next` when the agency
+ * offers a waitlist instead of (or before) handing off to a human.
+ * Read from the same vars a `create_reservation` node would (horario/
+ * data/quantidade), so it's a drop-in alternative wired right after
+ * the "sem vagas" message.
+ *
+ * Writing happens directly from the engine (no RPC needed — unlike
+ * booking, there's no capacity check to make atomic here); the actual
+ * notify-when-a-spot-opens sweep lives in
+ * src/app/api/waitlist/cron/route.ts, same cron-sweep shape as
+ * flows/cron's abandonment reminder.
+ */
+export interface JoinWaitlistNodeConfig {
+  pacote_id: string;
+  pacote_horario_var_key: string;
+  data_var_key: string;
+  quantidade_var_key: string;
+  next_node_key: string;
+}
+
 // Terminal nodes carry no config — they just stop the run.
 export type EndNodeConfig = Record<string, never>;
 
@@ -275,6 +297,7 @@ export type FlowNodeConfig =
   | { node_type: "create_reservation"; config: CreateReservationNodeConfig }
   | { node_type: "create_payment"; config: CreatePaymentNodeConfig }
   | { node_type: "send_voucher"; config: SendVoucherNodeConfig }
+  | { node_type: "join_waitlist"; config: JoinWaitlistNodeConfig }
   | { node_type: "handoff"; config: HandoffNodeConfig }
   | { node_type: "end"; config: EndNodeConfig };
 
