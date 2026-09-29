@@ -1,0 +1,55 @@
+name: Cron sweeps
+
+# Pings the app's own cron-sweep routes on a schedule — the
+# "external pinger" every one of these routes' own doc comments
+# mentions as a valid trigger (alongside Vercel Cron). All four share
+# one secret (AUTOMATION_CRON_SECRET) and one header (x-cron-secret),
+# same as the app already checks.
+#
+# Setup required (one-time, not done by this workflow):
+#   Repo → Settings → Secrets and variables → Actions → New repository
+#   secret, named AUTOMATION_CRON_SECRET, value = the exact same
+#   secret already set as the AUTOMATION_CRON_SECRET env var on the
+#   Coolify deploy. Without it, every run below 503s (the routes
+#   themselves refuse to run un-configured) and does nothing harmful,
+#   but also nothing useful.
+#
+# Site URL: hardcoded to the production domain below. Update it here
+# if the app ever moves domains.
+
+on:
+  schedule:
+    # Every 5 minutes — flows/cron and waitlist/cron both want tight
+    # cadences (abandoned-run reminders, waitlist notifications); GitHub's
+    # scheduler is best-effort and can slip a few minutes under load,
+    # which is fine for all four of these (nothing here is time-critical
+    # to the minute).
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {} # manual "Run workflow" button, for testing
+
+env:
+  SITE_URL: https://turisia.cloudefender.me
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: flows/cron (abandoned-run timeout + reminder)
+        run: |
+          curl -sf -X GET "$SITE_URL/api/flows/cron" \
+            -H "x-cron-secret: ${{ secrets.AUTOMATION_CRON_SECRET }}"
+
+      - name: automations/cron (time_based trigger)
+        run: |
+          curl -sf -X GET "$SITE_URL/api/automations/cron" \
+            -H "x-cron-secret: ${{ secrets.AUTOMATION_CRON_SECRET }}"
+
+      - name: waitlist/cron (notify on freed-up vagas)
+        run: |
+          curl -sf -X GET "$SITE_URL/api/waitlist/cron" \
+            -H "x-cron-secret: ${{ secrets.AUTOMATION_CRON_SECRET }}"
+
+      - name: surveys/cron (post-trip satisfaction survey)
+        run: |
+          curl -sf -X GET "$SITE_URL/api/surveys/cron" \
+            -H "x-cron-secret: ${{ secrets.AUTOMATION_CRON_SECRET }}"
