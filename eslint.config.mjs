@@ -14,6 +14,10 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Vendored minified opus-recorder encoder worker (served statically).
     "public/opus/**",
+    // Claude Code / ruflo plugin scaffolding — tooling config and CJS
+    // helper scripts, not application source. no-require-imports (and
+    // every other TS/ESM app rule) doesn't apply to these.
+    ".claude/**",
   ]),
 ]);
 

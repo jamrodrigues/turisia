@@ -36,13 +36,15 @@ export function PacoteClosingFlowButton({
   useEffect(() => {
     let cancelled = false
     const trimmedCategory = category?.trim().toLowerCase()
-    setLoading(true)
-    if (!accountId || !trimmedCategory) {
-      setFlowName(null)
-      setLoading(false)
-      return
-    }
     ;(async () => {
+      setLoading(true)
+      if (!accountId || !trimmedCategory) {
+        if (!cancelled) {
+          setFlowName(null)
+          setLoading(false)
+        }
+        return
+      }
       const supabase = createClient()
       const { data: flow } = await supabase
         .from("flows")

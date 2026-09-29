@@ -540,7 +540,7 @@ export function AiConfig() {
                   Ativar assistente de IA
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Chave geral. Liga o botão "Rascunhar com IA" no inbox.
+                  Chave geral. Liga o botão &quot;Rascunhar com IA&quot; no inbox.
                 </p>
               </div>
               <Switch

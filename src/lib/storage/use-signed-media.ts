@@ -54,23 +54,28 @@ export function useSignedMediaUrl(url: string | null | undefined): {
   useEffect(() => {
     let cancelado = false;
 
-    if (!url) {
-      setSrc("");
-      setReady(true);
-      return;
-    }
-    if (!parseStorageUrl(url)) {
-      setSrc(url);
-      setReady(true);
-      return;
-    }
+    (async () => {
+      if (!url) {
+        if (!cancelado) {
+          setSrc("");
+          setReady(true);
+        }
+        return;
+      }
+      if (!parseStorageUrl(url)) {
+        if (!cancelado) {
+          setSrc(url);
+          setReady(true);
+        }
+        return;
+      }
 
-    setReady(false);
-    signCached(url).then((assinada) => {
+      setReady(false);
+      const assinada = await signCached(url);
       if (cancelado) return;
       setSrc(assinada);
       setReady(true);
-    });
+    })();
 
     return () => {
       cancelado = true;

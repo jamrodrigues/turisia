@@ -6,11 +6,18 @@ import {
   formatCurrencyShort,
 } from "./currency";
 
+// `formatCurrency` deliberately formats with the RUNTIME's default
+// locale (`Intl.NumberFormat(undefined, ...)`) — right for an app
+// whose users are mostly pt-BR (grouping "1.234", not "1,234") and
+// wrong to hardcode in a test that must also pass on an en-US CI
+// runner. Match either grouping separator instead of assuming one.
+const GROUPED_1234 = /1[.,]234/;
+
 describe("formatCurrency", () => {
   it("formats whole amounts with no minor units", () => {
     // Use a non-breaking-space-tolerant check: Intl may insert NBSP.
     const out = formatCurrency(1234, "USD");
-    expect(out).toContain("1,234");
+    expect(out).toMatch(GROUPED_1234);
     expect(out).not.toContain(".00");
   });
 
@@ -30,13 +37,13 @@ describe("formatCurrency", () => {
     // Intl is lenient here — it uses the code as the symbol.
     const out = formatCurrency(1234, "ZZZ");
     expect(out).toContain("ZZZ");
-    expect(out).toContain("1,234");
+    expect(out).toMatch(GROUPED_1234);
   });
 
   it("never throws on a structurally invalid code (no DB CHECK on deals.currency)", () => {
     for (const bad of ["United States", "US", "USDD", "12", "u$d"]) {
       expect(() => formatCurrency(1234, bad)).not.toThrow();
-      expect(formatCurrency(1234, bad)).toContain("1,234");
+      expect(formatCurrency(1234, bad)).toMatch(GROUPED_1234);
     }
   });
 
