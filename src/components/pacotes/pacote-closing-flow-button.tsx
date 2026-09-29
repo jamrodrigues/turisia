@@ -19,7 +19,8 @@ import { Label } from "@/components/ui/label"
  * changing horários — regenerates the same flow in place.
  */
 export function PacoteClosingFlowButton({ pacoteId, canManage }: { pacoteId: string; canManage: boolean }) {
-  const { accountId, user } = useAuth()
+  const { accountId, user, accountRole } = useAuth()
+  const canSeeFlows = accountRole === "owner" || accountRole === "admin"
   const [generating, setGenerating] = useState(false)
   const [flowName, setFlowName] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -110,11 +111,17 @@ export function PacoteClosingFlowButton({ pacoteId, canManage }: { pacoteId: str
       )}
       {!loading && flowName && (
         <p className="text-xs text-muted-foreground">
-          Fluxo &quot;{flowName}&quot; ativo — veja em{" "}
-          <Link href="/flows" className="text-primary hover:underline">
-            Fluxos
-          </Link>
-          .
+          {canSeeFlows ? (
+            <>
+              Fluxo &quot;{flowName}&quot; ativo — veja em{" "}
+              <Link href="/flows" className="text-primary hover:underline">
+                Fluxos
+              </Link>
+              .
+            </>
+          ) : (
+            <>Fluxo &quot;{flowName}&quot; ativo.</>
+          )}
         </p>
       )}
     </div>
