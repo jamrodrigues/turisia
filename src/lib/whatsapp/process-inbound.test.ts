@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { buildDispatchMessage, parseSurveyReply, type NormalizedInbound } from './process-inbound'
+import {
+  buildDispatchMessage,
+  parseSurveyReply,
+  isConversationStale,
+  CONVERSATION_RESET_AFTER_MS,
+  type NormalizedInbound,
+} from './process-inbound'
 
 /**
  * The flow engine only understands `text` and `interactive_reply` — no
@@ -95,5 +101,29 @@ describe('parseSurveyReply', () => {
     expect(parseSurveyReply('foi muito bom')).toBeNull()
     expect(parseSurveyReply('')).toBeNull()
     expect(parseSurveyReply('oi')).toBeNull()
+  })
+})
+
+describe('isConversationStale', () => {
+  const now = new Date('2026-07-27T12:00:00Z')
+
+  it('null/undefined last_message_at is never stale — nothing to reset yet', () => {
+    expect(isConversationStale(null, now)).toBe(false)
+    expect(isConversationStale(undefined, now)).toBe(false)
+  })
+
+  it('exactly at the 24h boundary is not yet stale', () => {
+    const at = new Date(now.getTime() - CONVERSATION_RESET_AFTER_MS).toISOString()
+    expect(isConversationStale(at, now)).toBe(false)
+  })
+
+  it('just over 24h silent is stale', () => {
+    const at = new Date(now.getTime() - CONVERSATION_RESET_AFTER_MS - 1000).toISOString()
+    expect(isConversationStale(at, now)).toBe(true)
+  })
+
+  it('a recent message is not stale', () => {
+    const at = new Date(now.getTime() - 60 * 60 * 1000).toISOString() // 1h ago
+    expect(isConversationStale(at, now)).toBe(false)
   })
 })

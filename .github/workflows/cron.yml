@@ -53,3 +53,8 @@ jobs:
         run: |
           curl -sf -X GET "$SITE_URL/api/surveys/cron" \
             -H "x-cron-secret: ${{ secrets.AUTOMATION_CRON_SECRET }}"
+
+      - name: handoff-timeout/cron (AI reclaims unanswered handoffs after 2h)
+        run: |
+          curl -sf -X GET "$SITE_URL/api/handoff-timeout/cron" \
+            -H "x-cron-secret: ${{ secrets.AUTOMATION_CRON_SECRET }}"

@@ -13,6 +13,7 @@ import { signMediaUrl } from '@/lib/storage/media-url.server'
 import { MEDIA_URL_TTL } from '@/lib/storage/media-url'
 import { sendWithRetry } from './send-retry'
 import { recordAiUsage } from './usage'
+import { markHandoff } from './eligibility'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -159,11 +160,11 @@ export async function dispatchInboundToAiReply(
     if (bookingTopic || handoff || !text) {
       // The model can't (or shouldn't) answer — stop auto-replying on
       // this thread and leave the inbound unanswered so it surfaces in
-      // the inbox for a human. Sticky until an admin re-enables.
-      await db
-        .from('conversations')
-        .update({ ai_autoreply_disabled: true })
-        .eq('id', conversationId)
+      // the inbox for a human. Sticky until an admin re-enables (or the
+      // handoff-timeout cron reclaims it after 2h with no human reply —
+      // that's why this stamps handoff_at like every other standdown
+      // path, instead of only the flag).
+      await markHandoff(db, conversationId, { reason: 'ai_sentinel', by: 'bot' })
       return
     }
 

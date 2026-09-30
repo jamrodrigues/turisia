@@ -128,6 +128,76 @@ export interface ProcessInboundResult {
   contactId?: string
 }
 
+/** How long a conversation can sit silent before the next inbound is
+ *  treated as a new atendimento instead of a continuation. */
+export const CONVERSATION_RESET_AFTER_MS = 24 * 60 * 60 * 1000
+
+/** Pure gap check, exported for testing — see resetStaleConversation. */
+export function isConversationStale(
+  lastMessageAt: string | null | undefined,
+  now: Date,
+): boolean {
+  if (!lastMessageAt) return false
+  return now.getTime() - new Date(lastMessageAt).getTime() > CONVERSATION_RESET_AFTER_MS
+}
+
+/**
+ * "Novo atendimento": clears handoff/reply-cap state (same fields as
+ * `return_conversation_to_bot`, migration 033) and force-ends any still-
+ * 'active' flow_run for this contact, so a customer texting back after
+ * 24h+ of silence starts fresh rather than resuming a stale handoff or
+ * mid-flow state. Mutates `conversation` in place so the caller's
+ * subsequent gates see the reset within this same request. Best-effort —
+ * logs and continues on failure rather than blocking message delivery.
+ */
+async function resetStaleConversation(
+  conversation: Conversation,
+  contactId: string,
+): Promise<void> {
+  const db = supabaseAdmin()
+  const { error: convError } = await db
+    .from('conversations')
+    .update({
+      ai_autoreply_disabled: false,
+      assigned_agent_id: null,
+      ai_reply_count: 0,
+      handoff_at: null,
+      handoff_reason: null,
+      handoff_by: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversation.id)
+  if (convError) {
+    console.error('[inbound] error resetting stale conversation:', convError)
+  } else {
+    conversation.ai_autoreply_disabled = false
+    conversation.assigned_agent_id = undefined
+    conversation.handoff_reason = null
+  }
+
+  const { data: endedRuns, error: runError } = await db
+    .from('flow_runs')
+    .update({
+      status: 'timed_out',
+      ended_at: new Date().toISOString(),
+      end_reason: 'conversation_reset_24h',
+    })
+    .eq('contact_id', contactId)
+    .eq('status', 'active')
+    .select('id')
+  if (runError) {
+    console.error('[inbound] error ending stale flow_run:', runError)
+  } else if (endedRuns && endedRuns.length > 0) {
+    await db.from('flow_run_events').insert(
+      endedRuns.map((r) => ({
+        flow_run_id: r.id,
+        event_type: 'timeout',
+        payload: { reason: 'conversation_reset_24h' },
+      })),
+    )
+  }
+}
+
 export async function processNormalizedInbound(
   input: NormalizedInbound,
 ): Promise<ProcessInboundResult> {
@@ -177,6 +247,21 @@ export async function processNormalizedInbound(
         contactId: contactRecord.id,
       }
     }
+  }
+
+  // Conversa parada há mais de 24h — "novo atendimento": não deixar o
+  // cliente cair de volta num handoff/flow travado de dias atrás.
+  // Zera handoff + reply cap (mesmo shape de return_conversation_to_bot,
+  // migration 033) e encerra qualquer flow_run ainda 'active' desse
+  // contato, para que esta mensagem seja tratada como o início de um
+  // atendimento novo, não a continuação de onde parou. Mutamos o
+  // `conversation` local também, senão o gate de ai_autoreply_disabled
+  // logo abaixo ainda veria o valor antigo nesta mesma execução.
+  if (
+    !convResult.created &&
+    isConversationStale(conversation.last_message_at, input.timestamp)
+  ) {
+    await resetStaleConversation(conversation, contactRecord.id)
   }
 
   // Resolve swipe-reply context if present. A missing parent is fine —

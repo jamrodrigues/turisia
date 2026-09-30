@@ -206,7 +206,14 @@ describe('dispatchInboundToAiReply — handoff', () => {
     })
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).not.toHaveBeenCalled()
-    expect(h.state.updatePayload).toEqual({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload).toEqual(
+      expect.objectContaining({
+        ai_autoreply_disabled: true,
+        handoff_reason: 'ai_sentinel',
+        handoff_by: 'bot',
+        handoff_at: expect.any(String),
+      }),
+    )
     expect(h.state.rpcCalls).toHaveLength(0)
   })
 })
@@ -245,7 +252,9 @@ describe('dispatchInboundToAiReply — booking sentinel', () => {
     h.startFlowByAiTopic.mockResolvedValue({ consumed: false, outcome: 'no_match' })
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).not.toHaveBeenCalled()
-    expect(h.state.updatePayload).toEqual({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload).toEqual(
+      expect.objectContaining({ ai_autoreply_disabled: true, handoff_reason: 'ai_sentinel' }),
+    )
   })
 
   it('ignores a booking topic the account never advertised as bookable', async () => {
@@ -261,6 +270,8 @@ describe('dispatchInboundToAiReply — booking sentinel', () => {
     expect(h.engineSendText).not.toHaveBeenCalled()
     // Still disables auto-reply — a mismatched/hallucinated sentinel is
     // never sent to the customer as literal text either.
-    expect(h.state.updatePayload).toEqual({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload).toEqual(
+      expect.objectContaining({ ai_autoreply_disabled: true, handoff_reason: 'ai_sentinel' }),
+    )
   })
 })
